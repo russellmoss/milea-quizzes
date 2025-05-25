@@ -7,12 +7,8 @@
       "source": "/(.*)",
       "headers": [
         {
-          "key": "X-Frame-Options",
-          "value": "SAMEORIGIN"
-        },
-        {
           "key": "Content-Security-Policy",
-          "value": "frame-ancestors 'self' https://*.thinkific.com https://thinkific.com https://learn.thinkific.com https://app.thinkific.com https://*.vercel.app; default-src * 'unsafe-inline' 'unsafe-eval' data: blob:; script-src * 'unsafe-inline' 'unsafe-eval' blob:; style-src * 'unsafe-inline'; img-src * data: blob:; font-src * data:; connect-src *;"
+          "value": "frame-ancestors 'self' https://*.thinkific.com https://thinkific.com https://learn.thinkific.com https://app.thinkific.com https://*.vercel.app; default-src * 'unsafe-inline' 'unsafe-eval' data: blob:; script-src * 'unsafe-inline' 'unsafe-eval' blob: https://*.thinkific.com https://cdn.thinkific.com https://cdn-internal.thinkific.com https://js-agent.newrelic.com https://bam.nr-data.net; style-src * 'unsafe-inline' https://*.thinkific.com https://cdn.thinkific.com https://cdn-internal.thinkific.com https://fonts.googleapis.com; font-src * data: https://fonts.gstatic.com https://cdn.thinkific.com; img-src * data: blob: https://*.thinkific.com https://cdn.thinkific.com https://cdn-internal.thinkific.com https://import.cdn.thinkific.com; connect-src * https://*.thinkific.com https://cdn.thinkific.com https://cdn-internal.thinkific.com https://bam.nr-data.net;"
         },
         {
           "key": "Access-Control-Allow-Origin",
