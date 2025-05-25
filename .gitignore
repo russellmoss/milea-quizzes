@@ -39,4 +39,5 @@ venv/
 env/
 
 # Config files
-config.js 
+config.js
+js/config.js 
