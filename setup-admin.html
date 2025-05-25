@@ -23,20 +23,10 @@
         import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js';
         import { getAuth, signInWithEmailAndPassword } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js';
         import { getFirestore, doc, getDoc, setDoc } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
+        import { firebaseConfig } from '/config.js';
 
         async function setupAdmin() {
             try {
-                // Load Firebase config
-                const config = await import('/config.js');
-                const firebaseConfig = {
-                    apiKey: config.default.FIREBASE_API_KEY,
-                    authDomain: config.default.FIREBASE_AUTH_DOMAIN,
-                    projectId: config.default.FIREBASE_PROJECT_ID,
-                    storageBucket: config.default.FIREBASE_STORAGE_BUCKET,
-                    messagingSenderId: config.default.FIREBASE_MESSAGING_SENDER_ID,
-                    appId: config.default.FIREBASE_APP_ID
-                };
-
                 // Initialize Firebase
                 const app = initializeApp(firebaseConfig);
                 const auth = getAuth(app);
