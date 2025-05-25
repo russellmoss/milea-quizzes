@@ -1,4 +1,6 @@
-export default function middleware(request) {
+const { NextResponse } = require('next/server');
+
+function middleware(request) {
   // Get the response
   const response = NextResponse.next();
 
@@ -18,7 +20,7 @@ export default function middleware(request) {
   return response;
 }
 
-export const config = {
+const config = {
   matcher: [
     /*
      * Match all request paths except for the ones starting with:
@@ -29,4 +31,7 @@ export const config = {
      */
     '/((?!api|_next/static|_next/image|favicon.ico).*)',
   ],
-}; 
+};
+
+module.exports = middleware;
+module.exports.config = config; 
