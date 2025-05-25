@@ -712,3 +712,13 @@ document.addEventListener('DOMContentLoaded', function() {
         await saveQuizResults(results);
     });
 });
+
+// iframe height management
+if (window.parent !== window) {
+    function sendHeight() {
+        const height = Math.max(document.body.scrollHeight, 800);
+        window.parent.postMessage({ type: 'resize', height }, '*');
+    }
+    setInterval(sendHeight, 1000);
+    window.addEventListener('load', sendHeight);
+}
