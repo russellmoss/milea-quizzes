@@ -18,22 +18,17 @@ import {
     updateDoc
 } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
 
+// Replace dynamic import with static import
+import { firebaseConfig } from './config.js';
+
 // Initialize Firebase
 let auth;
 let db;
 
 async function initializeFirebase() {
     try {
-        const config = await import('/config.js');
-        const firebaseConfig = {
-            apiKey: config.default.FIREBASE_API_KEY,
-            authDomain: config.default.FIREBASE_AUTH_DOMAIN,
-            projectId: config.default.FIREBASE_PROJECT_ID,
-            storageBucket: config.default.FIREBASE_STORAGE_BUCKET,
-            messagingSenderId: config.default.FIREBASE_MESSAGING_SENDER_ID,
-            appId: config.default.FIREBASE_APP_ID
-        };
-
+        // Remove or comment out the dynamic import
+        // const config = await import('/config.js');
         const app = initializeApp(firebaseConfig);
         auth = getAuth(app);
         db = getFirestore(app);
