@@ -1,6 +1,6 @@
 [build]
+  command = "npm run build"
   publish = "."
-  command = "node build.js"
 
 [functions]
   directory = "functions"
@@ -10,6 +10,24 @@
   from = "/*"
   to = "/index.html"
   status = 200
+
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Frame-Options = "ALLOWALL"
+    Content-Security-Policy = "frame-ancestors 'self' https://*.thinkific.com https://thinkific.com https://learn.thinkific.com"
+
+[[headers]]
+  for = "/config.js"
+  [headers.values]
+    content-type = "application/javascript"
+    cache-control = "no-cache"
+
+[[headers]]
+  for = "/dist/*"
+  [headers.values]
+    content-type = "text/css"
+    cache-control = "public, max-age=31536000"
 
 [[headers]]
   for = "/js/*.js"
