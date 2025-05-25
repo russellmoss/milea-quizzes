@@ -1,0 +1,31 @@
+const { config } = require('dotenv');
+
+// Load environment variables
+config();
+
+exports.handler = async function(event, context) {
+  // Only allow GET requests
+  if (event.httpMethod !== 'GET') {
+    return {
+      statusCode: 405,
+      body: JSON.stringify({ error: 'Method not allowed' })
+    };
+  }
+
+  // Return the configuration
+  return {
+    statusCode: 200,
+    headers: {
+      'Content-Type': 'application/json',
+      'Cache-Control': 'no-cache, no-store, must-revalidate'
+    },
+    body: JSON.stringify({
+      FIREBASE_API_KEY: process.env.FIREBASE_API_KEY,
+      FIREBASE_AUTH_DOMAIN: process.env.FIREBASE_AUTH_DOMAIN,
+      FIREBASE_PROJECT_ID: process.env.FIREBASE_PROJECT_ID,
+      FIREBASE_STORAGE_BUCKET: process.env.FIREBASE_STORAGE_BUCKET,
+      FIREBASE_MESSAGING_SENDER_ID: process.env.FIREBASE_MESSAGING_SENDER_ID,
+      FIREBASE_APP_ID: process.env.FIREBASE_APP_ID
+    })
+  };
+}; 

@@ -1,0 +1,34 @@
+{
+  "name": "milea-quiz-app",
+  "version": "1.0.0",
+  "description": "Milea Estate Vineyard Training Quiz Application",
+  "main": "index.html",
+  "scripts": {
+    "dev": "netlify dev",
+    "build": "tailwindcss -i ./src/input.css -o ./dist/output.css --minify",
+    "watch": "tailwindcss -i ./src/input.css -o ./dist/output.css --watch",
+    "start": "netlify dev"
+  },
+  "repository": {
+    "type": "git",
+    "url": "your-github-repo-url"
+  },
+  "keywords": [
+    "quiz",
+    "training",
+    "firebase",
+    "education"
+  ],
+  "author": "Milea Estate Vineyard",
+  "license": "MIT",
+  "dependencies": {
+    "dotenv": "^16.3.1",
+    "node-fetch": "^2.6.9"
+  },
+  "devDependencies": {
+    "autoprefixer": "^10.4.16",
+    "netlify-cli": "^17.0.0",
+    "postcss": "^8.4.32",
+    "tailwindcss": "^3.4.0"
+  }
+}

@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Milea Estate - Admin Login</title>
+    <link href="https://fonts.googleapis.com/css2?family=Gilda+Display&display=swap" rel="stylesheet">
+    <link href="/dist/output.css" rel="stylesheet">
+</head>
+<body class="min-h-screen bg-background">
+    <div class="min-h-screen flex items-center justify-center">
+        <div class="max-w-md w-full mx-4">
+            <div class="text-center mb-8">
+                <h1 class="text-3xl font-bold text-primary mb-2">Milea Estate Admin</h1>
+                <p class="text-gray-600">Quiz System Administration</p>
+            </div>
+            
+            <div class="bg-white p-8 rounded-lg shadow-lg">
+                <form id="adminLoginForm" class="space-y-4">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Email</label>
+                        <input type="email" id="adminEmail" required 
+                               class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Password</label>
+                        <input type="password" id="adminPassword" required 
+                               class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary">
+                    </div>
+                    <button type="submit" class="w-full button button-primary">Login</button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Firebase -->
+    <script type="module">
+        import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js';
+        import { getAuth, signInWithEmailAndPassword, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js';
+        import { getFirestore, doc, getDoc } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
+
+        // Initialize Firebase
+        async function initializeFirebase() {
+            try {
+                const config = await import('/config.js');
+                const firebaseConfig = {
+                    apiKey: config.default.FIREBASE_API_KEY,
+                    authDomain: config.default.FIREBASE_AUTH_DOMAIN,
+                    projectId: config.default.FIREBASE_PROJECT_ID,
+                    storageBucket: config.default.FIREBASE_STORAGE_BUCKET,
+                    messagingSenderId: config.default.FIREBASE_MESSAGING_SENDER_ID,
+                    appId: config.default.FIREBASE_APP_ID
+                };
+
+                const app = initializeApp(firebaseConfig);
+                const auth = getAuth(app);
+                const db = getFirestore(app);
+
+                // Auth state observer
+                onAuthStateChanged(auth, async (user) => {
+                    if (user) {
+                        // Check if user is admin
+                        const userDoc = await getDoc(doc(db, 'users', user.uid));
+                        const userData = userDoc.data();
+                        
+                        if (userData && userData.isAdmin) {
+                            window.location.href = '/admin.html';
+                        } else {
+                            alert('Access denied. Admin privileges required.');
+                            auth.signOut();
+                        }
+                    }
+                });
+
+                // Handle login form submission
+                document.getElementById('adminLoginForm').addEventListener('submit', async (e) => {
+                    e.preventDefault();
+                    const email = document.getElementById('adminEmail').value;
+                    const password = document.getElementById('adminPassword').value;
+                    
+                    try {
+                        await signInWithEmailAndPassword(auth, email, password);
+                    } catch (error) {
+                        alert('Login failed: ' + error.message);
+                    }
+                });
+
+            } catch (error) {
+                console.error('Error initializing Firebase:', error);
+                alert('Error initializing application. Please try again later.');
+            }
+        }
+
+        // Initialize Firebase when the page loads
+        initializeFirebase();
+    </script>
+</body>
+</html> 

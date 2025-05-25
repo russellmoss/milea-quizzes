@@ -1,0 +1,20 @@
+{
+	"geolocation": {
+		"data": {
+			"city": "Poughkeepsie",
+			"country": {
+				"code": "US",
+				"name": "United States"
+			},
+			"subdivision": {
+				"code": "NY",
+				"name": "New York"
+			},
+			"timezone": "America/New_York",
+			"latitude": 41.6919,
+			"longitude": -73.8642,
+			"postalCode": "12603"
+		},
+		"timestamp": 1748190233861
+	}
+}
