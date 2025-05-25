@@ -4,7 +4,8 @@
   "description": "Milea Estate Training Quiz Application",
   "scripts": {
     "build": "node build.js",
-    "start": "serve ."
+    "start": "serve .",
+    "vercel-build": "node build.js"
   },
   "dependencies": {
     "serve": "^14.2.1"
