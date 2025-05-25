@@ -1,13 +1,15 @@
 {
   "name": "milea-quiz-app",
   "version": "1.0.0",
-  "description": "Milea Estate Training Quiz App",
+  "description": "Milea Estate Training Quiz Application",
   "scripts": {
-    "build": "npm run build:css && npm run build:config",
-    "build:css": "tailwindcss -i ./src/input.css -o ./dist/output.css",
-    "build:config": "node build.js"
+    "build": "node build.js",
+    "start": "serve ."
   },
   "dependencies": {
-    "tailwindcss": "^3.4.1"
+    "serve": "^14.2.1"
+  },
+  "engines": {
+    "node": ">=18.0.0"
   }
 }
