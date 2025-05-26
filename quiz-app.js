@@ -18,7 +18,10 @@ import {
     updateDoc,
     initializeFirestore,
     enableIndexedDbPersistence,
-    CACHE_SIZE_UNLIMITED
+    CACHE_SIZE_UNLIMITED,
+    query,
+    orderBy,
+    getDocs
 } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
 
 // Replace dynamic import with static import
@@ -74,6 +77,7 @@ async function initializeFirebase() {
             if (user) {
                 try {
                     await createOrUpdateUserProfile(user);
+                    await loadQuizzesFromFirestore();
                 } catch (error) {
                     console.error('Error handling user profile:', error);
                     // Don't throw here, just log the error
@@ -95,131 +99,42 @@ async function initializeFirebase() {
 // Initialize Firebase when the page loads
 initializeFirebase();
 
-// Quiz Data
-const quizData = {
-    1: {
-        chapterNumber: 1,
-        title: "Chapter 1: First Impressions Core Concepts",
-        questions: [
-            {
-                id: 1,
-                type: "fill-blank",
-                question: "Your manual emphasizes that guests not acknowledged within the first _______ seconds tend to rate their experience lower.",
-                correctAnswer: "15",
-                points: 10
-            },
-            {
-                id: 2,
-                type: "multiple-choice",
-                question: "What is a primary hospitality objective of clear and professional signage for guest arrival, according to your training?",
-                options: [
-                    "To showcase Milea's marketing budget.",
-                    "To reduce guest confusion or anxiety, creating a sense of ease.",
-                    "To provide detailed historical information about the vineyard.",
-                    "To list all the wines available for tasting."
-                ],
-                correctAnswer: 1, // Index of correct answer (B)
-                explanation: "As your manual states under 'Guest Arrival: The Importance of Clear Signage,' the hospitality objective is to 'Reduces guest confusion or anxiety, creating a sense of ease and confidence from the outset.'",
-                points: 15
-            },
-            {
-                id: 3,
-                type: "short-answer",
-                question: "Your manual suggests 'Asking Key Initial Questions.' List two such questions a Tasting Associate should consider asking guests after welcoming them to their table.",
-                correctAnswers: [
-                    "Welcome! Is this your first time visiting Milea Estate, or have you been here before?",
-                    "What kinds of wines do you typically enjoy?",
-                    "Are there any particular styles you're drawn to -- perhaps bold reds, crisp whites, or something a bit sweeter?",
-                    "How did you hear about Milea Estate Vineyard today?",
-                    "Are you celebrating a special occasion today, or just out enjoying a beautiful day of wine tasting?"
-                ],
-                points: 20,
-                requiresManualGrading: true
-            },
-            {
-                id: 4,
-                type: "true-false",
-                question: "Using a guest's name, when known, 'makes guests feel recognized, important, and like individuals rather than just another transaction,' as stated in your manual.",
-                correctAnswer: true,
-                explanation: "As stated in your manual under 'Personalization Power: Using Guest Names,' using a name 'Makes guests feel recognized, important, and like individuals rather than just another transaction.'",
-                points: 10
-            },
-            {
-                id: 5,
-                type: "fill-blank-double",
-                question: "When sharing the Milea brand story, your manual advises keeping it brief at the initial stage, aiming for an introduction of about _____ to _____ minutes.",
-                correctAnswers: ["1", "2"],
-                explanation: "As stated in your manual under 'Concise and Compelling: Sharing the Milea Brand Story,' 'Keep it Brief: 1-2 minutes is usually sufficient at this stage.'",
-                points: 15,
-                requiresManualGrading: true
-            },
-            {
-                id: 6,
-                type: "short-answer",
-                question: "Briefly describe one key element of the Milea brand story that you could share with a first-time guest, drawing from the 'Concise and Compelling: Sharing the Milea Brand Story' section of your manual or the 'About Us' information.",
-                correctAnswers: [
-                    "Milea Estate is a family endeavor, rooted in over a century of farming right here in the Hudson River Valley",
-                    "Our passion is to really showcase what this incredible region can produce, especially with varietals like Chardonnay and Cabernet Franc, which we believe can be world-class here"
-                ],
-                points: 30,
-                requiresManualGrading: true
-            }
-        ]
-    },
-    2: {
-        chapterNumber: 2,
-        title: "Chapter 2: Rapport & Needs Fundamentals",
-        questions: [
-            {
-                id: 7,
-                type: "long-answer",
-                question: "Explain the philosophy of \"helpful sales\" at Milea Estate Vineyard in your own words.",
-                correctAnswer: "Answer should reflect the manual's sentiment: It's about reframing sales not as pressure or manipulation, but as sharing something wonderful (our wines, our club) to enhance someone's life and enjoyment. It's driven by a genuine belief in the product and a desire to help guests find what will bring them pleasure, thereby building lasting trust.",
-                points: 25,
-                requiresManualGrading: true
-            },
-            {
-                id: 8,
-                type: "long-answer",
-                question: "What is the difference between positive profiling and negative profiling, as described in your manual?",
-                correctAnswer: "Answer should align with the manual: Positive profiling uses observation and empathy (behavior, questions, cues) to enhance the guest's experience by matching your style to their needs. Negative profiling uses assumptions and biases (skin color, age, clothing alone) to judge or limit someone, leading to missed opportunities and discrimination.",
-                points: 25,
-                requiresManualGrading: true
-            },
-            {
-                id: 9,
-                type: "long-answer",
-                question: "Why are open-ended questions generally more effective than closed-ended questions when trying to build rapport and understand guest needs?",
-                correctAnswer: "Answer should highlight points from the manual: Open-ended questions encourage guests to talk more, share detailed thoughts and feelings, which builds trust and satisfaction. They provide richer, more nuanced information, allowing for better tailoring of the experience and demonstrating genuine interest beyond just a sale.",
-                points: 25,
-                requiresManualGrading: true
-            },
-            {
-                id: 10,
-                type: "profile-strategy",
-                question: "List three common tasting room guest profiles identified in your manual and briefly describe one Milea-specific strategy for interacting effectively with each.",
-                subQuestions: [
-                    "Profile 1:",
-                    "Milea Strategy for Profile 1:",
-                    "Profile 2:",
-                    "Milea Strategy for Profile 2:",
-                    "Profile 3:",
-                    "Milea Strategy for Profile 3:"
-                ],
-                correctAnswer: "Answers will vary based on the three profiles chosen but should accurately reflect the descriptions and Milea approaches outlined in Chapter 2. Examples include:\n\nThe Value Seeker: Guide them to discover value, position wine value after they express liking, introduce club based on value proposition.\n\nThe Rating Hound: Build authority early by mentioning high scores, frame wines with accolades, offer score cards.\n\nThe Learner: Meet curiosity with enthusiasm, structure tasting around themes, encourage questions.\n\nThe Day Tripper: Be fun and friendly, simplify descriptions, use playful analogies, make it Instagrammable.\n\nThe Diner: Ask if first visit, recommend wine based on food choices, mention bottle purchase discount.\n\nThe Trade Member: Ask if in industry early, provide technical tasting, showcase flagships and hidden gems.",
-                points: 25,
-                requiresManualGrading: true
-            }
-        ]
-    }
-};
-
+// Global variables
 let currentUser = null;
 let currentQuiz = null;
 let userAnswers = {};
+let availableQuizzes = {}; // Store loaded quizzes
 
-// Authentication functions
-function toggleAuthMode() {
+// Handle login form submission
+document.getElementById('authFormLogin').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const email = document.getElementById('loginEmail').value;
+    const password = document.getElementById('loginPassword').value;
+    
+    try {
+        await signInWithEmailAndPassword(auth, email, password);
+    } catch (error) {
+        alert('Login failed: ' + error.message);
+    }
+});
+
+// Handle signup form submission
+document.getElementById('authFormSignup').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const name = document.getElementById('signupName').value;
+    const email = document.getElementById('signupEmail').value;
+    const password = document.getElementById('signupPassword').value;
+    
+    try {
+        const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+        await createOrUpdateUserProfile(userCredential.user, { name });
+    } catch (error) {
+        alert('Signup failed: ' + error.message);
+    }
+});
+
+// Toggle between login and signup forms
+window.toggleAuthMode = function() {
     const loginForm = document.getElementById('loginForm');
     const signupForm = document.getElementById('signupForm');
     
@@ -230,50 +145,115 @@ function toggleAuthMode() {
         loginForm.classList.add('hidden');
         signupForm.classList.remove('hidden');
     }
-}
+};
 
-// Handle login form
-document.getElementById('authFormLogin').addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const email = document.getElementById('loginEmail').value;
-    const password = document.getElementById('loginPassword').value;
-    
+// Load quizzes from Firestore
+async function loadQuizzesFromFirestore() {
     try {
-        await window.firebase.signInWithEmailAndPassword(window.auth, email, password);
-    } catch (error) {
-        alert('Login failed: ' + error.message);
-    }
-});
-
-// Handle signup form
-document.getElementById('authFormSignup').addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const name = document.getElementById('signupName').value;
-    const email = document.getElementById('signupEmail').value;
-    const password = document.getElementById('signupPassword').value;
-    
-    try {
-        const userCredential = await window.firebase.createUserWithEmailAndPassword(window.auth, email, password);
-        const user = userCredential.user;
+        console.log('Loading quizzes from Firestore...');
+        const quizzesRef = collection(db, 'quizzes');
+        const q = query(quizzesRef, orderBy('chapterNumber'));
+        const querySnapshot = await getDocs(q);
         
-        // Create user profile
-        await createOrUpdateUserProfile(user, {
-            name: name,
-            isAdmin: false // Default to non-admin
+        console.log('Query snapshot size:', querySnapshot.size);
+        
+        availableQuizzes = {};
+        querySnapshot.forEach((doc) => {
+            const quiz = doc.data();
+            console.log('Processing quiz:', doc.id, quiz);
+            availableQuizzes[quiz.chapterNumber] = {
+                id: doc.id,
+                ...quiz
+            };
         });
         
+        console.log('Available quizzes after loading:', availableQuizzes);
+        updateQuizSelectionUI();
     } catch (error) {
-        alert('Signup failed: ' + error.message);
+        console.error('Error loading quizzes:', error);
+        console.error('Error details:', {
+            code: error.code,
+            message: error.message,
+            stack: error.stack
+        });
+        showQuizLoadError();
     }
-});
+}
 
-function logout() {
-    window.firebase.signOut(window.auth);
+function updateQuizSelectionUI() {
+    const quizSelectionDiv = document.getElementById('quizSelection');
+    if (!quizSelectionDiv) {
+        console.error('Quiz selection div not found');
+        return;
+    }
+    
+    const gridDiv = quizSelectionDiv.querySelector('.grid');
+    if (!gridDiv) {
+        console.error('Grid div not found');
+        return;
+    }
+    
+    console.log('Updating quiz selection UI with quizzes:', availableQuizzes);
+    
+    // Clear existing quiz cards
+    gridDiv.innerHTML = '';
+    
+    if (Object.keys(availableQuizzes).length === 0) {
+        console.log('No quizzes available');
+        gridDiv.innerHTML = `
+            <div class="col-span-full text-center py-8">
+                <p class="text-gray-600">No quizzes available at the moment.</p>
+                <p class="text-sm text-gray-500 mt-2">Please check back later or contact your administrator.</p>
+            </div>
+        `;
+        return;
+    }
+    
+    // Sort by chapter number and create cards
+    Object.keys(availableQuizzes)
+        .sort((a, b) => parseInt(a) - parseInt(b))
+        .forEach(chapterNumber => {
+            const quiz = availableQuizzes[chapterNumber];
+            console.log('Creating card for quiz:', quiz);
+            
+            const quizCard = document.createElement('div');
+            quizCard.className = 'bg-white rounded-lg shadow-md p-6 border-l-4 border-primary';
+            quizCard.innerHTML = `
+                <h3 class="text-lg font-semibold mb-2">Chapter ${quiz.chapterNumber}</h3>
+                <p class="text-gray-600 mb-4">${quiz.title}</p>
+                <p class="text-sm text-gray-500 mb-4">${quiz.questions?.length || 0} questions</p>
+                <button onclick="window.startQuiz(${quiz.chapterNumber})" class="button button-primary w-full">Start Quiz</button>
+            `;
+            
+            gridDiv.appendChild(quizCard);
+        });
+}
+
+function showQuizLoadError() {
+    const quizSelectionDiv = document.getElementById('quizSelection');
+    if (!quizSelectionDiv) return;
+    
+    const gridDiv = quizSelectionDiv.querySelector('.grid');
+    if (!gridDiv) return;
+    
+    gridDiv.innerHTML = `
+        <div class="col-span-full text-center py-8">
+            <p class="text-red-600 mb-2">Error loading quizzes</p>
+            <p class="text-sm text-gray-500 mb-4">There was a problem loading the available quizzes.</p>
+            <button onclick="loadQuizzesFromFirestore()" class="button button-primary">Try Again</button>
+        </div>
+    `;
 }
 
 // Quiz functions
 function startQuiz(chapterNumber) {
-    currentQuiz = quizData[chapterNumber];
+    const quiz = availableQuizzes[chapterNumber];
+    if (!quiz) {
+        alert('Quiz not found. Please try refreshing the page.');
+        return;
+    }
+    
+    currentQuiz = quiz;
     userAnswers = {};
     
     document.getElementById('quizSelection').classList.add('hidden');
@@ -712,6 +692,9 @@ function showResults(results) {
         let statusText = result.needsManualGrading ? 'Pending Review' :
                         result.isCorrect ? 'Correct' : 'Incorrect';
         
+        // Get the current question from the quiz to access model answers
+        const currentQuestion = currentQuiz.questions.find(q => q.id === result.id);
+        
         questionDiv.innerHTML = `
             <div class="flex justify-between items-start mb-2">
                 <h4 class="text-lg font-semibold">Question ${index + 1}</h4>
@@ -724,7 +707,7 @@ function showResults(results) {
             </div>
             <div class="mb-2">
                 <strong>Model Answer:</strong>
-                <div class="text-gray-600 mt-1 whitespace-pre-line">${Array.isArray(result.correctAnswer) ? result.correctAnswer.join(' to ') : result.correctAnswer}</div>
+                <div class="text-gray-600 mt-1 whitespace-pre-line">${formatModelAnswer(currentQuestion, result)}</div>
             </div>
             ${result.explanation ? `<p class="text-sm text-gray-500 mb-2">${result.explanation}</p>` : ''}
             <div class="mt-2">
@@ -735,6 +718,44 @@ function showResults(results) {
         
         reviewContainer.appendChild(questionDiv);
     });
+}
+
+function formatModelAnswer(question, result) {
+    if (!question) return 'No model answer available';
+    
+    switch (question.type) {
+        case 'short-answer':
+        case 'long-answer':
+            return question.modelAnswer || 'No model answer available';
+            
+        case 'profile-strategy':
+            if (!question.modelAnswers) return 'No model answer available';
+            return `
+                Profile 1: ${question.modelAnswers.profile1 || 'Not provided'}
+                Strategy 1: ${question.modelAnswers.strategy1 || 'Not provided'}
+                
+                Profile 2: ${question.modelAnswers.profile2 || 'Not provided'}
+                Strategy 2: ${question.modelAnswers.strategy2 || 'Not provided'}
+                
+                Profile 3: ${question.modelAnswers.profile3 || 'Not provided'}
+                Strategy 3: ${question.modelAnswers.strategy3 || 'Not provided'}
+            `;
+            
+        case 'fill-blank':
+            return question.correctAnswer || 'No model answer available';
+            
+        case 'fill-blank-double':
+            return question.correctAnswers ? question.correctAnswers.join(' to ') : 'No model answer available';
+            
+        case 'multiple-choice':
+            return question.options ? question.options[question.correctAnswer] : 'No model answer available';
+            
+        case 'true-false':
+            return question.correctAnswer ? 'True' : 'False';
+            
+        default:
+            return 'No model answer available';
+    }
 }
 
 function goBackToSelection() {
@@ -775,29 +796,15 @@ function updateUIForAuthState(user) {
 
 // Make functions available globally
 window.startQuiz = function(chapterNumber) {
-    currentQuiz = quizData[chapterNumber];
-    userAnswers = {};
-    
-    document.getElementById('quizSelection').classList.add('hidden');
-    document.getElementById('quizInterface').classList.remove('hidden');
-    document.getElementById('quizResults').classList.add('hidden');
-    
-    // Set the quiz title
-    document.getElementById('quizTitle').textContent = currentQuiz.title;
-    
-    loadQuestions();
+    startQuiz(chapterNumber);
 };
 
 window.goBackToSelection = function() {
-    document.getElementById('quizInterface').classList.add('hidden');
-    document.getElementById('quizResults').classList.add('hidden');
-    document.getElementById('quizSelection').classList.remove('hidden');
+    goBackToSelection();
 };
 
 window.retakeQuiz = function() {
-    if (currentQuiz) {
-        startQuiz(currentQuiz.chapterNumber);
-    }
+    retakeQuiz();
 };
 
 window.logout = function() {
@@ -805,55 +812,12 @@ window.logout = function() {
 };
 
 window.toggleAuthMode = function() {
-    const loginForm = document.getElementById('loginForm');
-    const signupForm = document.getElementById('signupForm');
-    
-    if (loginForm.classList.contains('hidden')) {
-        loginForm.classList.remove('hidden');
-        signupForm.classList.add('hidden');
-    } else {
-        loginForm.classList.add('hidden');
-        signupForm.classList.remove('hidden');
-    }
+    toggleAuthMode();
 };
 
-// Update event listeners to use addEventListener instead of onclick
-document.addEventListener('DOMContentLoaded', function() {
-    // Login form
-    document.getElementById('authFormLogin').addEventListener('submit', async (e) => {
-        e.preventDefault();
-        const email = document.getElementById('loginEmail').value;
-        const password = document.getElementById('loginPassword').value;
-        
-        try {
-            await signInWithEmailAndPassword(auth, email, password);
-        } catch (error) {
-            alert('Login failed: ' + error.message);
-        }
-    });
-
-    // Signup form
-    document.getElementById('authFormSignup').addEventListener('submit', async (e) => {
-        e.preventDefault();
-        const name = document.getElementById('signupName').value;
-        const email = document.getElementById('signupEmail').value;
-        const password = document.getElementById('signupPassword').value;
-        
-        try {
-            const userCredential = await createUserWithEmailAndPassword(auth, email, password);
-            const user = userCredential.user;
-            
-            // Create user profile
-            await createOrUpdateUserProfile(user, {
-                name: name,
-                isAdmin: false // Default to non-admin
-            });
-            
-        } catch (error) {
-            alert('Signup failed: ' + error.message);
-        }
-    });
-});
+window.loadQuizzesFromFirestore = function() {
+    loadQuizzesFromFirestore();
+};
 
 // iframe height management
 if (window.parent !== window) {

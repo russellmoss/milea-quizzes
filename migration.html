@@ -1,0 +1,301 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Quiz Data Migration - Milea Estate</title>
+    <link href="/dist/output.css" rel="stylesheet">
+</head>
+<body class="min-h-screen bg-background">
+    <div class="max-w-4xl mx-auto px-4 py-8">
+        <div class="bg-white rounded-lg shadow-lg p-8">
+            <h1 class="text-3xl font-bold text-primary mb-6">Quiz Data Migration Tool</h1>
+            
+            <div class="mb-6 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
+                <h2 class="text-lg font-semibold text-yellow-800 mb-2">⚠️ Important Notice</h2>
+                <p class="text-yellow-700">This tool will migrate your existing hardcoded quiz data to Firestore. Only run this once when setting up your system for the first time.</p>
+            </div>
+            
+            <div id="migrationStatus" class="mb-6 hidden">
+                <!-- Migration status will appear here -->
+            </div>
+            
+            <div class="space-y-4">
+                <div>
+                    <h3 class="text-lg font-semibold mb-2">Data to be migrated:</h3>
+                    <ul class="list-disc list-inside space-y-1 text-gray-700">
+                        <li>Chapter 1: First Impressions Core Concepts (6 questions)</li>
+                        <li>Chapter 2: Rapport & Needs Fundamentals (4 questions)</li>
+                    </ul>
+                </div>
+                
+                <div class="flex space-x-4">
+                    <button id="startMigration" onclick="startMigration()" class="button button-primary">
+                        Start Migration
+                    </button>
+                    <button onclick="checkExistingData()" class="button button-secondary">
+                        Check Existing Data
+                    </button>
+                </div>
+            </div>
+            
+            <div id="migrationLog" class="mt-8 hidden">
+                <h3 class="text-lg font-semibold mb-4">Migration Log</h3>
+                <div id="logContent" class="bg-gray-50 p-4 rounded-lg font-mono text-sm max-h-96 overflow-y-auto">
+                    <!-- Log content will appear here -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script type="module">
+        import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js';
+        import { 
+            getAuth, 
+            signInWithEmailAndPassword 
+        } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js';
+        import { 
+            getFirestore, 
+            collection, 
+            addDoc, 
+            getDocs, 
+            serverTimestamp 
+        } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
+        import { firebaseConfig } from './config.js';
+
+        // Initialize Firebase
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const db = getFirestore(app);
+
+        // Original quiz data to migrate
+        const quizData = {
+            1: {
+                chapterNumber: 1,
+                title: "Chapter 1: First Impressions Core Concepts",
+                questions: [
+                    {
+                        id: 1,
+                        type: "fill-blank",
+                        question: "Your manual emphasizes that guests not acknowledged within the first _______ seconds tend to rate their experience lower.",
+                        correctAnswer: "15",
+                        points: 10
+                    },
+                    {
+                        id: 2,
+                        type: "multiple-choice",
+                        question: "What is a primary hospitality objective of clear and professional signage for guest arrival, according to your training?",
+                        options: [
+                            "To showcase Milea's marketing budget.",
+                            "To reduce guest confusion or anxiety, creating a sense of ease.",
+                            "To provide detailed historical information about the vineyard.",
+                            "To list all the wines available for tasting."
+                        ],
+                        correctAnswer: 1,
+                        explanation: "As your manual states under 'Guest Arrival: The Importance of Clear Signage,' the hospitality objective is to 'Reduces guest confusion or anxiety, creating a sense of ease and confidence from the outset.'",
+                        points: 15
+                    },
+                    {
+                        id: 3,
+                        type: "short-answer",
+                        question: "Your manual suggests 'Asking Key Initial Questions.' List two such questions a Tasting Associate should consider asking guests after welcoming them to their table.",
+                        correctAnswers: [
+                            "Welcome! Is this your first time visiting Milea Estate, or have you been here before?",
+                            "What kinds of wines do you typically enjoy?",
+                            "Are there any particular styles you're drawn to -- perhaps bold reds, crisp whites, or something a bit sweeter?",
+                            "How did you hear about Milea Estate Vineyard today?",
+                            "Are you celebrating a special occasion today, or just out enjoying a beautiful day of wine tasting?"
+                        ],
+                        points: 20,
+                        requiresManualGrading: true
+                    },
+                    {
+                        id: 4,
+                        type: "true-false",
+                        question: "Using a guest's name, when known, 'makes guests feel recognized, important, and like individuals rather than just another transaction,' as stated in your manual.",
+                        correctAnswer: true,
+                        explanation: "As stated in your manual under 'Personalization Power: Using Guest Names,' using a name 'Makes guests feel recognized, important, and like individuals rather than just another transaction.'",
+                        points: 10
+                    },
+                    {
+                        id: 5,
+                        type: "fill-blank-double",
+                        question: "When sharing the Milea brand story, your manual advises keeping it brief at the initial stage, aiming for an introduction of about _____ to _____ minutes.",
+                        correctAnswers: ["1", "2"],
+                        explanation: "As stated in your manual under 'Concise and Compelling: Sharing the Milea Brand Story,' 'Keep it Brief: 1-2 minutes is usually sufficient at this stage.'",
+                        points: 15,
+                        requiresManualGrading: true
+                    },
+                    {
+                        id: 6,
+                        type: "short-answer",
+                        question: "Briefly describe one key element of the Milea brand story that you could share with a first-time guest, drawing from the 'Concise and Compelling: Sharing the Milea Brand Story' section of your manual or the 'About Us' information.",
+                        correctAnswers: [
+                            "Milea Estate is a family endeavor, rooted in over a century of farming right here in the Hudson River Valley",
+                            "Our passion is to really showcase what this incredible region can produce, especially with varietals like Chardonnay and Cabernet Franc, which we believe can be world-class here"
+                        ],
+                        points: 30,
+                        requiresManualGrading: true
+                    }
+                ]
+            },
+            2: {
+                chapterNumber: 2,
+                title: "Chapter 2: Rapport & Needs Fundamentals",
+                questions: [
+                    {
+                        id: 7,
+                        type: "long-answer",
+                        question: "Explain the philosophy of \"helpful sales\" at Milea Estate Vineyard in your own words.",
+                        correctAnswer: "Answer should reflect the manual's sentiment: It's about reframing sales not as pressure or manipulation, but as sharing something wonderful (our wines, our club) to enhance someone's life and enjoyment. It's driven by a genuine belief in the product and a desire to help guests find what will bring them pleasure, thereby building lasting trust.",
+                        points: 25,
+                        requiresManualGrading: true
+                    },
+                    {
+                        id: 8,
+                        type: "long-answer",
+                        question: "What is the difference between positive profiling and negative profiling, as described in your manual?",
+                        correctAnswer: "Answer should align with the manual: Positive profiling uses observation and empathy (behavior, questions, cues) to enhance the guest's experience by matching your style to their needs. Negative profiling uses assumptions and biases (skin color, age, clothing alone) to judge or limit someone, leading to missed opportunities and discrimination.",
+                        points: 25,
+                        requiresManualGrading: true
+                    },
+                    {
+                        id: 9,
+                        type: "long-answer",
+                        question: "Why are open-ended questions generally more effective than closed-ended questions when trying to build rapport and understand guest needs?",
+                        correctAnswer: "Answer should highlight points from the manual: Open-ended questions encourage guests to talk more, share detailed thoughts and feelings, which builds trust and satisfaction. They provide richer, more nuanced information, allowing for better tailoring of the experience and demonstrating genuine interest beyond just a sale.",
+                        points: 25,
+                        requiresManualGrading: true
+                    },
+                    {
+                        id: 10,
+                        type: "profile-strategy",
+                        question: "List three common tasting room guest profiles identified in your manual and briefly describe one Milea-specific strategy for interacting effectively with each.",
+                        subQuestions: [
+                            "Profile 1:",
+                            "Milea Strategy for Profile 1:",
+                            "Profile 2:",
+                            "Milea Strategy for Profile 2:",
+                            "Profile 3:",
+                            "Milea Strategy for Profile 3:"
+                        ],
+                        correctAnswer: "Answers will vary based on the three profiles chosen but should accurately reflect the descriptions and Milea approaches outlined in Chapter 2. Examples include:\n\nThe Value Seeker: Guide them to discover value, position wine value after they express liking, introduce club based on value proposition.\n\nThe Rating Hound: Build authority early by mentioning high scores, frame wines with accolades, offer score cards.\n\nThe Learner: Meet curiosity with enthusiasm, structure tasting around themes, encourage questions.\n\nThe Day Tripper: Be fun and friendly, simplify descriptions, use playful analogies, make it Instagrammable.\n\nThe Diner: Ask if first visit, recommend wine based on food choices, mention bottle purchase discount.\n\nThe Trade Member: Ask if in industry early, provide technical tasting, showcase flagships and hidden gems.",
+                        points: 25,
+                        requiresManualGrading: true
+                    }
+                ]
+            }
+        };
+
+        function log(message) {
+            const logContent = document.getElementById('logContent');
+            const timestamp = new Date().toLocaleTimeString();
+            logContent.innerHTML += `[${timestamp}] ${message}\n`;
+            logContent.scrollTop = logContent.scrollHeight;
+            console.log(message);
+        }
+
+        function showStatus(message, type = 'info') {
+            const statusDiv = document.getElementById('migrationStatus');
+            statusDiv.className = `mb-6 p-4 rounded-lg ${
+                type === 'success' ? 'bg-green-50 border border-green-200' :
+                type === 'error' ? 'bg-red-50 border border-red-200' :
+                'bg-blue-50 border border-blue-200'
+            }`;
+            statusDiv.innerHTML = `
+                <p class="${
+                    type === 'success' ? 'text-green-700' :
+                    type === 'error' ? 'text-red-700' :
+                    'text-blue-700'
+                }">${message}</p>
+            `;
+            statusDiv.classList.remove('hidden');
+        }
+
+        window.startMigration = async function() {
+            // Prompt for admin credentials
+            const email = prompt('Enter admin email:');
+            const password = prompt('Enter admin password:');
+            
+            if (!email || !password) {
+                alert('Email and password are required for migration.');
+                return;
+            }
+
+            try {
+                // Show migration log
+                document.getElementById('migrationLog').classList.remove('hidden');
+                document.getElementById('logContent').innerHTML = '';
+                
+                showStatus('Starting migration...', 'info');
+                log('Migration started');
+                
+                // Sign in
+                log('Authenticating admin user...');
+                await signInWithEmailAndPassword(auth, email, password);
+                log('✓ Admin authenticated successfully');
+                
+                // Check if user is admin (optional - you might want to add this check)
+                log('Starting quiz data migration...');
+                
+                // Migrate each quiz
+                for (const [chapterNum, quiz] of Object.entries(quizData)) {
+                    log(`Migrating Chapter ${chapterNum}: ${quiz.title}`);
+                    
+                    const quizDoc = {
+                        chapterNumber: quiz.chapterNumber,
+                        title: quiz.title,
+                        questions: quiz.questions,
+                        createdAt: serverTimestamp(),
+                        migratedFrom: 'hardcoded-data'
+                    };
+                    
+                    try {
+                        const docRef = await addDoc(collection(db, 'quizzes'), quizDoc);
+                        log(`✓ Chapter ${chapterNum} migrated successfully (ID: ${docRef.id})`);
+                    } catch (error) {
+                        log(`✗ Error migrating Chapter ${chapterNum}: ${error.message}`);
+                        throw error;
+                    }
+                }
+                
+                log('Migration completed successfully!');
+                showStatus('Migration completed successfully! You can now use the quiz management system.', 'success');
+                
+                // Disable migration button
+                document.getElementById('startMigration').disabled = true;
+                document.getElementById('startMigration').textContent = 'Migration Complete';
+                
+            } catch (error) {
+                log(`✗ Migration failed: ${error.message}`);
+                showStatus(`Migration failed: ${error.message}`, 'error');
+                console.error('Migration error:', error);
+            }
+        };
+
+        window.checkExistingData = async function() {
+            try {
+                showStatus('Checking existing quiz data...', 'info');
+                
+                const quizzesRef = collection(db, 'quizzes');
+                const snapshot = await getDocs(quizzesRef);
+                
+                if (snapshot.empty) {
+                    showStatus('No existing quiz data found. You can proceed with migration.', 'info');
+                } else {
+                    const quizzes = [];
+                    snapshot.forEach((doc) => {
+                        const data = doc.data();
+                        quizzes.push(`Chapter ${data.chapterNumber}: ${data.title} (${data.questions?.length || 0} questions)`);
+                    });
+                    
+                    showStatus(`Found ${snapshot.size} existing quiz(es):\n• ${quizzes.join('\n• ')}\n\nMigration may create duplicates.`, 'info');
+                }
+            } catch (error) {
+                showStatus(`Error checking existing data: ${error.message}`, 'error');
+                console.error('Check data error:', error);
+            }
+        };
+    </script>
+</body>
+</html> 

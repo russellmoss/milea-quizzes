@@ -15,7 +15,11 @@ import {
     where, 
     getDocs,
     updateDoc,
-    serverTimestamp
+    serverTimestamp,
+    addDoc,
+    deleteDoc,
+    setDoc,
+    orderBy
 } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
 
 // Import Firebase config
@@ -29,7 +33,10 @@ const db = getFirestore(app);
 // Global variables
 let currentUser = null;
 let submissions = []; // Store submissions globally
+let quizzes = []; // Store quizzes globally
 let currentSubmission = null; // Store current submission being viewed/graded
+let currentQuizId = null; // Store current quiz being edited
+let questionIdCounter = 1; // For generating unique question IDs
 
 // Auth state observer
 onAuthStateChanged(auth, async (user) => {
@@ -41,6 +48,7 @@ onAuthStateChanged(auth, async (user) => {
             document.getElementById('authModal').classList.add('hidden');
             document.getElementById('mainApp').classList.remove('hidden');
             loadDashboardData();
+            loadQuizzes();
         } else {
             alert('You do not have admin access.');
             signOut(auth);
@@ -50,6 +58,553 @@ onAuthStateChanged(auth, async (user) => {
         document.getElementById('mainApp').classList.add('hidden');
     }
 });
+
+// Tab switching functionality
+window.switchTab = function(tabName) {
+    // Show/hide sections
+    if (tabName === 'submissions') {
+        document.getElementById('submissionsSection').style.display = 'block';
+        document.getElementById('quizzesSection').style.display = 'none';
+        loadDashboardData();
+    } else if (tabName === 'quizzes') {
+        document.getElementById('submissionsSection').style.display = 'none';
+        document.getElementById('quizzesSection').style.display = 'block';
+        loadQuizzes();
+    }
+};
+
+// Load quizzes from Firestore
+async function loadQuizzes() {
+    try {
+        console.log('Loading quizzes...');
+        const quizzesRef = collection(db, 'quizzes');
+        const q = query(quizzesRef, orderBy('chapterNumber'));
+        const querySnapshot = await getDocs(q);
+        
+        quizzes = [];
+        querySnapshot.forEach((doc) => {
+            const quiz = {
+                id: doc.id,
+                ...doc.data()
+            };
+            quizzes.push(quiz);
+        });
+        
+        console.log('Loaded quizzes:', quizzes.length);
+        updateQuizzesUI();
+    } catch (error) {
+        console.error('Error loading quizzes:', error);
+        alert('Error loading quizzes. Please try again.');
+    }
+}
+
+function updateQuizzesUI() {
+    const quizzesList = document.getElementById('quizzesList');
+    if (!quizzesList) return;
+    
+    quizzesList.innerHTML = '';
+    
+    if (quizzes.length === 0) {
+        quizzesList.innerHTML = `
+            <div class="text-center py-8 text-gray-500">
+                <p>No quizzes found. Create your first quiz to get started.</p>
+            </div>
+        `;
+        return;
+    }
+    
+    quizzes.forEach(quiz => {
+        const row = document.createElement('div');
+        row.className = 'p-4 border border-gray-200 rounded-lg hover:bg-gray-50';
+        
+        row.innerHTML = `
+            <div class="flex justify-between items-center">
+                <div class="flex-1">
+                    <h4 class="text-lg font-semibold">Chapter ${quiz.chapterNumber}</h4>
+                    <p class="text-gray-700">${quiz.title}</p>
+                    <p class="text-sm text-gray-600">${quiz.questions?.length || 0} questions</p>
+                </div>
+                <div class="flex space-x-2">
+                    <button onclick="editQuiz('${quiz.id}')" class="button button-secondary">Edit</button>
+                    <button onclick="deleteQuiz('${quiz.id}')" class="button button-danger">Delete</button>
+                </div>
+            </div>
+        `;
+        
+        quizzesList.appendChild(row);
+    });
+}
+
+// Quiz management functions
+window.createNewQuiz = function() {
+    console.log('createNewQuiz called');
+    currentQuizId = null;
+    questionIdCounter = 1;
+    
+    const titleElement = document.getElementById('quizBuilderTitle');
+    if (titleElement) {
+        titleElement.textContent = 'Create New Quiz';
+    } else {
+        console.error('Quiz builder title element not found');
+    }
+    
+    showQuizBuilder();
+};
+
+window.editQuiz = function(quizId) {
+    const quiz = quizzes.find(q => q.id === quizId);
+    if (!quiz) {
+        alert('Quiz not found');
+        return;
+    }
+    
+    currentQuizId = quizId;
+    document.getElementById('quizBuilderTitle').textContent = 'Edit Quiz';
+    showQuizBuilder(quiz);
+};
+
+window.deleteQuiz = function(quizId) {
+    const quiz = quizzes.find(q => q.id === quizId);
+    if (!quiz) {
+        alert('Quiz not found');
+        return;
+    }
+    
+    if (confirm(`Are you sure you want to delete "${quiz.title}"? This action cannot be undone.`)) {
+        deleteQuizFromFirestore(quizId);
+    }
+};
+
+async function deleteQuizFromFirestore(quizId) {
+    try {
+        await deleteDoc(doc(db, 'quizzes', quizId));
+        alert('Quiz deleted successfully!');
+        loadQuizzes();
+    } catch (error) {
+        console.error('Error deleting quiz:', error);
+        alert('Error deleting quiz. Please try again.');
+    }
+}
+
+function showQuizBuilder(quiz = null) {
+    console.log('showQuizBuilder called');
+    const modal = document.getElementById('quizBuilderModal');
+    const content = document.getElementById('quizBuilderContent');
+    
+    if (!modal || !content) {
+        console.error('Modal elements not found:', { modal, content });
+        return;
+    }
+    
+    console.log('Modal elements found, setting up content');
+    const isEditing = quiz !== null;
+    
+    // Set up the form content
+    content.innerHTML = `
+        <form id="quizBuilderForm" class="space-y-6">
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Chapter Number</label>
+                    <input type="number" 
+                           name="chapterNumber" 
+                           min="1" 
+                           value="${quiz?.chapterNumber || ''}"
+                           class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
+                           required>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Quiz Title</label>
+                    <input type="text" 
+                           name="quizTitle" 
+                           value="${quiz?.title || ''}"
+                           class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
+                           placeholder="e.g., Chapter 1: First Impressions Core Concepts"
+                           required>
+                </div>
+            </div>
+            
+            <div>
+                <div class="flex justify-between items-center mb-4">
+                    <h3 class="text-lg font-semibold">Questions</h3>
+                    <div class="space-x-2">
+                        <select id="questionTypeSelect" class="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary">
+                            <option value="multiple-choice">Multiple Choice</option>
+                            <option value="fill-blank">Fill in the Blank</option>
+                            <option value="fill-blank-double">Fill in the Blank (Two Answers)</option>
+                            <option value="true-false">True/False</option>
+                            <option value="short-answer">Short Answer</option>
+                            <option value="long-answer">Long Answer</option>
+                            <option value="profile-strategy">Profile & Strategy</option>
+                        </select>
+                        <button type="button" onclick="window.addQuestion()" class="button button-primary">Add Question</button>
+                    </div>
+                </div>
+
+                <div id="questionsContainer" class="space-y-4">
+                    <!-- Questions will be added here -->
+                </div>
+            </div>
+            
+            <div class="flex justify-end space-x-4 pt-4 border-t">
+                <button type="button" onclick="window.closeQuizBuilder()" class="button button-secondary">Cancel</button>
+                <button type="submit" class="button button-primary">${isEditing ? 'Update Quiz' : 'Create Quiz'}</button>
+            </div>
+        </form>
+    `;
+    
+    // Load existing questions if editing
+    if (quiz && quiz.questions) {
+        quiz.questions.forEach(question => {
+            window.addQuestion(question);
+        });
+    }
+    
+    // Handle form submission
+    const form = document.getElementById('quizBuilderForm');
+    if (form) {
+        form.addEventListener('submit', handleQuizSave);
+    } else {
+        console.error('Quiz builder form not found');
+    }
+    
+    // Show the modal
+    modal.classList.remove('hidden');
+    console.log('Modal display classes:', modal.className);
+}
+
+window.addQuestion = function(existingQuestion = null) {
+    const container = document.getElementById('questionsContainer');
+    const questionType = existingQuestion?.type || document.getElementById('questionTypeSelect').value;
+    const questionId = existingQuestion?.id || questionIdCounter++;
+    
+    const questionDiv = document.createElement('div');
+    questionDiv.className = 'question-builder p-4 border border-gray-200 rounded-lg space-y-4';
+    questionDiv.dataset.questionId = questionId;
+    questionDiv.dataset.questionType = questionType;
+    
+    let questionHTML = `
+        <div class="flex justify-between items-center">
+            <h4 class="font-semibold text-gray-800">Question ${container.children.length + 1} (${questionType.replace('-', ' ')})</h4>
+            <button type="button" onclick="removeQuestion(this)" class="text-red-600 hover:text-red-800">
+                <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
+                </svg>
+            </button>
+        </div>
+        
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-2">Points</label>
+                <input type="number" 
+                       name="points_${questionId}" 
+                       min="1" 
+                       value="${existingQuestion?.points || 10}"
+                       class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
+                       required>
+            </div>
+            <div>
+                <label class="flex items-center">
+                    <input type="checkbox" 
+                           name="requiresManualGrading_${questionId}" 
+                           ${existingQuestion?.requiresManualGrading ? 'checked' : ''}
+                           class="mr-2">
+                    <span class="text-sm text-gray-700">Requires manual grading</span>
+                </label>
+            </div>
+        </div>
+        
+        <div>
+            <label class="block text-sm font-medium text-gray-700 mb-2">Question Text</label>
+            <textarea name="question_${questionId}" 
+                      rows="3" 
+                      class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
+                      required>${existingQuestion?.question || ''}</textarea>
+        </div>
+    `;
+    
+    // Add type-specific fields
+    switch (questionType) {
+        case 'multiple-choice':
+            questionHTML += `
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Options</label>
+                    <div class="space-y-2">
+                        ${(existingQuestion?.options || ['', '', '', '']).map((option, index) => `
+                            <div class="flex items-center space-x-2">
+                                <input type="radio" 
+                                       name="correctAnswer_${questionId}" 
+                                       value="${index}"
+                                       ${existingQuestion?.correctAnswer === index ? 'checked' : ''}
+                                       class="text-primary focus:ring-primary">
+                                <input type="text" 
+                                       name="option_${questionId}_${index}" 
+                                       value="${option}"
+                                       class="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
+                                       placeholder="Option ${index + 1}"
+                                       required>
+                            </div>
+                        `).join('')}
+                    </div>
+                </div>
+            `;
+            break;
+            
+        case 'fill-blank':
+            questionHTML += `
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Correct Answer</label>
+                    <input type="text" 
+                           name="correctAnswer_${questionId}" 
+                           value="${existingQuestion?.correctAnswer || ''}"
+                           class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
+                           required>
+                </div>
+            `;
+            break;
+            
+        case 'fill-blank-double':
+            questionHTML += `
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Correct Answers</label>
+                    <div class="grid grid-cols-2 gap-4">
+                        <input type="text" 
+                               name="correctAnswer1_${questionId}" 
+                               value="${existingQuestion?.correctAnswers?.[0] || ''}"
+                               class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
+                               placeholder="First answer"
+                               required>
+                        <input type="text" 
+                               name="correctAnswer2_${questionId}" 
+                               value="${existingQuestion?.correctAnswers?.[1] || ''}"
+                               class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
+                               placeholder="Second answer"
+                               required>
+                    </div>
+                </div>
+            `;
+            break;
+            
+        case 'true-false':
+            questionHTML += `
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Correct Answer</label>
+                    <div class="space-y-2">
+                        <label class="flex items-center">
+                            <input type="radio" 
+                                   name="correctAnswer_${questionId}" 
+                                   value="true"
+                                   ${existingQuestion?.correctAnswer === true ? 'checked' : ''}
+                                   class="mr-2 text-primary focus:ring-primary">
+                            <span>True</span>
+                        </label>
+                        <label class="flex items-center">
+                            <input type="radio" 
+                                   name="correctAnswer_${questionId}" 
+                                   value="false"
+                                   ${existingQuestion?.correctAnswer === false ? 'checked' : ''}
+                                   class="mr-2 text-primary focus:ring-primary">
+                            <span>False</span>
+                        </label>
+                    </div>
+                </div>
+            `;
+            break;
+
+        case 'short-answer':
+        case 'long-answer':
+            questionHTML += `
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Model Answer</label>
+                    <textarea name="modelAnswer_${questionId}" 
+                              rows="4" 
+                              class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
+                              placeholder="Enter the model answer that will be shown to students after submission"
+                              required>${existingQuestion?.modelAnswer || ''}</textarea>
+                </div>
+            `;
+            break;
+
+        case 'profile-strategy':
+            questionHTML += `
+                <div class="space-y-4">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-2">Model Profile 1</label>
+                        <input type="text" 
+                               name="modelProfile1_${questionId}" 
+                               value="${existingQuestion?.modelAnswers?.profile1 || ''}"
+                               class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
+                               placeholder="e.g., The Learner"
+                               required>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-2">Model Strategy 1</label>
+                        <textarea name="modelStrategy1_${questionId}" 
+                                  rows="3" 
+                                  class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
+                                  placeholder="Enter the model strategy for Profile 1"
+                                  required>${existingQuestion?.modelAnswers?.strategy1 || ''}</textarea>
+                    </div>
+                    
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-2">Model Profile 2</label>
+                        <input type="text" 
+                               name="modelProfile2_${questionId}" 
+                               value="${existingQuestion?.modelAnswers?.profile2 || ''}"
+                               class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
+                               placeholder="e.g., The Value Seeker"
+                               required>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-2">Model Strategy 2</label>
+                        <textarea name="modelStrategy2_${questionId}" 
+                                  rows="3" 
+                                  class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
+                                  placeholder="Enter the model strategy for Profile 2"
+                                  required>${existingQuestion?.modelAnswers?.strategy2 || ''}</textarea>
+                    </div>
+                    
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-2">Model Profile 3</label>
+                        <input type="text" 
+                               name="modelProfile3_${questionId}" 
+                               value="${existingQuestion?.modelAnswers?.profile3 || ''}"
+                               class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
+                               placeholder="e.g., The Day Tripper"
+                               required>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-2">Model Strategy 3</label>
+                        <textarea name="modelStrategy3_${questionId}" 
+                                  rows="3" 
+                                  class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
+                                  placeholder="Enter the model strategy for Profile 3"
+                                  required>${existingQuestion?.modelAnswers?.strategy3 || ''}</textarea>
+                    </div>
+                </div>
+            `;
+            break;
+    }
+    
+    questionDiv.innerHTML = questionHTML;
+    container.appendChild(questionDiv);
+};
+
+window.removeQuestion = function(button) {
+    button.closest('.question-builder').remove();
+};
+
+function updateQuestionNumbers() {
+    const questions = document.querySelectorAll('.question-builder');
+    questions.forEach((question, index) => {
+        const header = question.querySelector('h4');
+        if (header) {
+            const type = question.dataset.questionType.replace('-', ' ');
+            header.textContent = `Question ${index + 1} (${type})`;
+        }
+    });
+}
+
+async function handleQuizSave(e) {
+    e.preventDefault();
+    
+    const formData = new FormData(e.target);
+    const chapterNumber = parseInt(formData.get('chapterNumber'));
+    const title = formData.get('quizTitle');
+    
+    // Collect questions
+    const questions = [];
+    const questionElements = document.querySelectorAll('.question-builder');
+    
+    questionElements.forEach((questionEl, index) => {
+        const questionId = questionEl.dataset.questionId;
+        const questionType = questionEl.dataset.questionType;
+        
+        const question = {
+            id: parseInt(questionId),
+            type: questionType,
+            question: formData.get(`question_${questionId}`),
+            points: parseInt(formData.get(`points_${questionId}`)),
+            requiresManualGrading: formData.get(`requiresManualGrading_${questionId}`) === 'on'
+        };
+        
+        // Add type-specific data
+        switch (questionType) {
+            case 'multiple-choice':
+                question.options = [
+                    formData.get(`option_${questionId}_0`),
+                    formData.get(`option_${questionId}_1`),
+                    formData.get(`option_${questionId}_2`),
+                    formData.get(`option_${questionId}_3`)
+                ];
+                question.correctAnswer = parseInt(formData.get(`correctAnswer_${questionId}`));
+                break;
+                
+            case 'fill-blank':
+                question.correctAnswer = formData.get(`correctAnswer_${questionId}`);
+                break;
+                
+            case 'fill-blank-double':
+                question.correctAnswers = [
+                    formData.get(`correctAnswer1_${questionId}`),
+                    formData.get(`correctAnswer2_${questionId}`)
+                ];
+                break;
+                
+            case 'true-false':
+                question.correctAnswer = formData.get(`correctAnswer_${questionId}`) === 'true';
+                break;
+
+            case 'short-answer':
+            case 'long-answer':
+                question.modelAnswer = formData.get(`modelAnswer_${questionId}`);
+                break;
+
+            case 'profile-strategy':
+                question.modelAnswers = {
+                    profile1: formData.get(`modelProfile1_${questionId}`),
+                    strategy1: formData.get(`modelStrategy1_${questionId}`),
+                    profile2: formData.get(`modelProfile2_${questionId}`),
+                    strategy2: formData.get(`modelStrategy2_${questionId}`),
+                    profile3: formData.get(`modelProfile3_${questionId}`),
+                    strategy3: formData.get(`modelStrategy3_${questionId}`)
+                };
+                break;
+        }
+        
+        questions.push(question);
+    });
+    
+    const quizData = {
+        chapterNumber: chapterNumber,
+        title: title,
+        questions: questions,
+        updatedAt: serverTimestamp()
+    };
+    
+    try {
+        if (currentQuizId) {
+            // Update existing quiz
+            await updateDoc(doc(db, 'quizzes', currentQuizId), quizData);
+            alert('Quiz updated successfully!');
+        } else {
+            // Create new quiz
+            quizData.createdAt = serverTimestamp();
+            await addDoc(collection(db, 'quizzes'), quizData);
+            alert('Quiz created successfully!');
+        }
+        
+        closeQuizBuilder();
+        loadQuizzes();
+    } catch (error) {
+        console.error('Error saving quiz:', error);
+        alert('Error saving quiz. Please try again.');
+    }
+}
+
+window.closeQuizBuilder = function() {
+    document.getElementById('quizBuilderModal').classList.add('hidden');
+    currentQuizId = null;
+};
 
 // Load dashboard data
 async function loadDashboardData() {
