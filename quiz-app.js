@@ -15,7 +15,10 @@ import {
     collection, 
     addDoc, 
     serverTimestamp,
-    updateDoc
+    updateDoc,
+    initializeFirestore,
+    enableIndexedDbPersistence,
+    CACHE_SIZE_UNLIMITED
 } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
 
 // Replace dynamic import with static import
@@ -27,11 +30,26 @@ let db;
 
 async function initializeFirebase() {
     try {
-        // Remove or comment out the dynamic import
-        // const config = await import('/config.js');
         const app = initializeApp(firebaseConfig);
         auth = getAuth(app);
-        db = getFirestore(app);
+        
+        // Initialize Firestore with settings
+        db = initializeFirestore(app, {
+            cacheSizeBytes: CACHE_SIZE_UNLIMITED,
+            ignoreUndefinedProperties: true
+        });
+
+        // Enable offline persistence
+        try {
+            await enableIndexedDbPersistence(db);
+            console.log('Offline persistence enabled');
+        } catch (error) {
+            if (error.code === 'failed-precondition') {
+                console.warn('Multiple tabs open, persistence can only be enabled in one tab at a time.');
+            } else if (error.code === 'unimplemented') {
+                console.warn('The current browser does not support persistence.');
+            }
+        }
 
         // Make Firebase available globally
         window.auth = auth;
@@ -48,7 +66,7 @@ async function initializeFirebase() {
             serverTimestamp
         };
 
-        // Auth state observer
+        // Auth state observer with better error handling
         onAuthStateChanged(auth, async (user) => {
             console.log('Auth state changed:', user ? 'User logged in' : 'No user');
             currentUser = user;
@@ -58,6 +76,8 @@ async function initializeFirebase() {
                     await createOrUpdateUserProfile(user);
                 } catch (error) {
                     console.error('Error handling user profile:', error);
+                    // Don't throw here, just log the error
+                    // This allows the app to continue working even if profile creation fails
                 }
             }
             
@@ -67,6 +87,8 @@ async function initializeFirebase() {
         console.log('Firebase initialized successfully');
     } catch (error) {
         console.error('Error initializing Firebase:', error);
+        // Show user-friendly error message
+        alert('Error connecting to the server. Please check your internet connection and try again.');
     }
 }
 
@@ -143,6 +165,52 @@ const quizData = {
                 requiresManualGrading: true
             }
         ]
+    },
+    2: {
+        chapterNumber: 2,
+        title: "Chapter 2: Rapport & Needs Fundamentals",
+        questions: [
+            {
+                id: 7,
+                type: "long-answer",
+                question: "Explain the philosophy of \"helpful sales\" at Milea Estate Vineyard in your own words.",
+                correctAnswer: "Answer should reflect the manual's sentiment: It's about reframing sales not as pressure or manipulation, but as sharing something wonderful (our wines, our club) to enhance someone's life and enjoyment. It's driven by a genuine belief in the product and a desire to help guests find what will bring them pleasure, thereby building lasting trust.",
+                points: 25,
+                requiresManualGrading: true
+            },
+            {
+                id: 8,
+                type: "long-answer",
+                question: "What is the difference between positive profiling and negative profiling, as described in your manual?",
+                correctAnswer: "Answer should align with the manual: Positive profiling uses observation and empathy (behavior, questions, cues) to enhance the guest's experience by matching your style to their needs. Negative profiling uses assumptions and biases (skin color, age, clothing alone) to judge or limit someone, leading to missed opportunities and discrimination.",
+                points: 25,
+                requiresManualGrading: true
+            },
+            {
+                id: 9,
+                type: "long-answer",
+                question: "Why are open-ended questions generally more effective than closed-ended questions when trying to build rapport and understand guest needs?",
+                correctAnswer: "Answer should highlight points from the manual: Open-ended questions encourage guests to talk more, share detailed thoughts and feelings, which builds trust and satisfaction. They provide richer, more nuanced information, allowing for better tailoring of the experience and demonstrating genuine interest beyond just a sale.",
+                points: 25,
+                requiresManualGrading: true
+            },
+            {
+                id: 10,
+                type: "profile-strategy",
+                question: "List three common tasting room guest profiles identified in your manual and briefly describe one Milea-specific strategy for interacting effectively with each.",
+                subQuestions: [
+                    "Profile 1:",
+                    "Milea Strategy for Profile 1:",
+                    "Profile 2:",
+                    "Milea Strategy for Profile 2:",
+                    "Profile 3:",
+                    "Milea Strategy for Profile 3:"
+                ],
+                correctAnswer: "Answers will vary based on the three profiles chosen but should accurately reflect the descriptions and Milea approaches outlined in Chapter 2. Examples include:\n\nThe Value Seeker: Guide them to discover value, position wine value after they express liking, introduce club based on value proposition.\n\nThe Rating Hound: Build authority early by mentioning high scores, frame wines with accolades, offer score cards.\n\nThe Learner: Meet curiosity with enthusiasm, structure tasting around themes, encourage questions.\n\nThe Day Tripper: Be fun and friendly, simplify descriptions, use playful analogies, make it Instagrammable.\n\nThe Diner: Ask if first visit, recommend wine based on food choices, mention bottle purchase discount.\n\nThe Trade Member: Ask if in industry early, provide technical tasting, showcase flagships and hidden gems.",
+                points: 25,
+                requiresManualGrading: true
+            }
+        ]
     }
 };
 
@@ -211,6 +279,9 @@ function startQuiz(chapterNumber) {
     document.getElementById('quizSelection').classList.add('hidden');
     document.getElementById('quizInterface').classList.remove('hidden');
     document.getElementById('quizResults').classList.add('hidden');
+    
+    // Set the quiz title
+    document.getElementById('quizTitle').textContent = currentQuiz.title;
     
     loadQuestions();
 }
@@ -297,6 +368,66 @@ function loadQuestions() {
                               placeholder="Your detailed answer here..."></textarea>
                 `;
                 break;
+                
+            case 'long-answer':
+                questionHTML += `
+                    <textarea name="question_${question.id}" 
+                              rows="6" 
+                              class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
+                              placeholder="Provide a detailed answer in your own words..."></textarea>
+                `;
+                break;
+                
+            case 'profile-strategy':
+                questionHTML += `
+                    <div class="space-y-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-2">Profile 1:</label>
+                            <input type="text" 
+                                   name="question_${question.id}_profile1" 
+                                   class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
+                                   placeholder="e.g., The Learner, The Value Seeker, etc.">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-2">Milea Strategy for Profile 1:</label>
+                            <textarea name="question_${question.id}_strategy1" 
+                                      rows="3" 
+                                      class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
+                                      placeholder="Describe the specific Milea strategy for this profile..."></textarea>
+                        </div>
+                        
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-2">Profile 2:</label>
+                            <input type="text" 
+                                   name="question_${question.id}_profile2" 
+                                   class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
+                                   placeholder="e.g., The Rating Hound, The Day Tripper, etc.">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-2">Milea Strategy for Profile 2:</label>
+                            <textarea name="question_${question.id}_strategy2" 
+                                      rows="3" 
+                                      class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
+                                      placeholder="Describe the specific Milea strategy for this profile..."></textarea>
+                        </div>
+                        
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-2">Profile 3:</label>
+                            <input type="text" 
+                                   name="question_${question.id}_profile3" 
+                                   class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
+                                   placeholder="e.g., The Diner, The Trade Member, etc.">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-2">Milea Strategy for Profile 3:</label>
+                            <textarea name="question_${question.id}_strategy3" 
+                                      rows="3" 
+                                      class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
+                                      placeholder="Describe the specific Milea strategy for this profile..."></textarea>
+                        </div>
+                    </div>
+                `;
+                break;
         }
         
         questionDiv.innerHTML = questionHTML;
@@ -328,6 +459,7 @@ document.getElementById('quizForm').addEventListener('submit', async (e) => {
             case 'multiple-choice':
             case 'true-false':
             case 'short-answer':
+            case 'long-answer':
                 userAnswers[question.id] = formData.get(`question_${question.id}`);
                 break;
             case 'fill-blank-double':
@@ -335,6 +467,16 @@ document.getElementById('quizForm').addEventListener('submit', async (e) => {
                     formData.get(`question_${question.id}_1`),
                     formData.get(`question_${question.id}_2`)
                 ];
+                break;
+            case 'profile-strategy':
+                userAnswers[question.id] = {
+                    profile1: formData.get(`question_${question.id}_profile1`),
+                    strategy1: formData.get(`question_${question.id}_strategy1`),
+                    profile2: formData.get(`question_${question.id}_profile2`),
+                    strategy2: formData.get(`question_${question.id}_strategy2`),
+                    profile3: formData.get(`question_${question.id}_profile3`),
+                    strategy3: formData.get(`question_${question.id}_strategy3`)
+                };
                 break;
         }
     });
@@ -383,6 +525,14 @@ function gradeQuiz() {
                     isCorrect = answer1?.toLowerCase().trim() === question.correctAnswers[0].toLowerCase() &&
                                answer2?.toLowerCase().trim() === question.correctAnswers[1].toLowerCase();
                     points = isCorrect ? question.points : 0;
+                    break;
+                    
+                case 'short-answer':
+                case 'long-answer':
+                case 'profile-strategy':
+                    // These always require manual grading
+                    needsManualGrading = true;
+                    points = 0;
                     break;
             }
         }
@@ -518,6 +668,27 @@ async function saveQuizResults(results) {
     }
 }
 
+function formatUserAnswer(result) {
+    if (typeof result.userAnswer === 'object' && result.userAnswer !== null) {
+        if (Array.isArray(result.userAnswer)) {
+            return result.userAnswer.join(' to ');
+        } else if (result.userAnswer.profile1) {
+            // Profile-strategy format
+            return `
+                <div class="space-y-2 text-sm">
+                    <div><strong>Profile 1:</strong> ${result.userAnswer.profile1 || 'Not provided'}</div>
+                    <div><strong>Strategy 1:</strong> ${result.userAnswer.strategy1 || 'Not provided'}</div>
+                    <div><strong>Profile 2:</strong> ${result.userAnswer.profile2 || 'Not provided'}</div>
+                    <div><strong>Strategy 2:</strong> ${result.userAnswer.strategy2 || 'Not provided'}</div>
+                    <div><strong>Profile 3:</strong> ${result.userAnswer.profile3 || 'Not provided'}</div>
+                    <div><strong>Strategy 3:</strong> ${result.userAnswer.strategy3 || 'Not provided'}</div>
+                </div>
+            `;
+        }
+    }
+    return result.userAnswer || 'No answer provided';
+}
+
 function showResults(results) {
     document.getElementById('quizInterface').classList.add('hidden');
     document.getElementById('quizResults').classList.remove('hidden');
@@ -549,13 +720,13 @@ function showResults(results) {
             <p class="text-gray-700 mb-2">${result.question}</p>
             <div class="mb-2">
                 <strong>Your Answer:</strong>
-                <p class="text-gray-600">${Array.isArray(result.userAnswer) ? result.userAnswer.join(' to ') : result.userAnswer}</p>
+                <div class="text-gray-600 mt-1">${formatUserAnswer(result)}</div>
             </div>
             <div class="mb-2">
                 <strong>Model Answer:</strong>
-                <p class="text-gray-600">${Array.isArray(result.correctAnswer) ? result.correctAnswer.join(' to ') : result.correctAnswer}</p>
+                <div class="text-gray-600 mt-1 whitespace-pre-line">${Array.isArray(result.correctAnswer) ? result.correctAnswer.join(' to ') : result.correctAnswer}</div>
             </div>
-            ${result.explanation ? `<p class="text-sm text-gray-500">${result.explanation}</p>` : ''}
+            ${result.explanation ? `<p class="text-sm text-gray-500 mb-2">${result.explanation}</p>` : ''}
             <div class="mt-2">
                 <strong>Points:</strong>
                 <span class="${statusClass}">${result.points}/${result.maxPoints}</span>
@@ -610,6 +781,9 @@ window.startQuiz = function(chapterNumber) {
     document.getElementById('quizSelection').classList.add('hidden');
     document.getElementById('quizInterface').classList.remove('hidden');
     document.getElementById('quizResults').classList.add('hidden');
+    
+    // Set the quiz title
+    document.getElementById('quizTitle').textContent = currentQuiz.title;
     
     loadQuestions();
 };
@@ -678,38 +852,6 @@ document.addEventListener('DOMContentLoaded', function() {
         } catch (error) {
             alert('Signup failed: ' + error.message);
         }
-    });
-
-    // Quiz form
-    document.getElementById('quizForm').addEventListener('submit', async (e) => {
-        e.preventDefault();
-        
-        // Collect all answers
-        const formData = new FormData(e.target);
-        userAnswers = {};
-        
-        currentQuiz.questions.forEach(question => {
-            switch (question.type) {
-                case 'fill-blank':
-                case 'multiple-choice':
-                case 'true-false':
-                case 'short-answer':
-                    userAnswers[question.id] = formData.get(`question_${question.id}`);
-                    break;
-                case 'fill-blank-double':
-                    userAnswers[question.id] = [
-                        formData.get(`question_${question.id}_1`),
-                        formData.get(`question_${question.id}_2`)
-                    ];
-                    break;
-            }
-        });
-        
-        // Grade the quiz
-        const results = gradeQuiz();
-        
-        // Save to Firebase
-        await saveQuizResults(results);
     });
 });
 

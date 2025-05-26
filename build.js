@@ -63,41 +63,44 @@ try {
     process.exit(1);
 }
 
-// Generate config.js
-console.log('\nGenerating config.js...');
-try {
-    // Check if all required environment variables are set
-    const missingVars = requiredEnvVars.filter(varName => !process.env[varName]);
-    if (missingVars.length > 0) {
-        throw new Error(`Missing required environment variables: ${missingVars.join(', ')}`);
-    }
+// Generate config.js only in production (Vercel)
+if (process.env.NODE_ENV === 'production') {
+    console.log('\nGenerating config.js for production...');
+    try {
+        // Check if all required environment variables are set
+        const missingVars = requiredEnvVars.filter(varName => !process.env[varName]);
+        if (missingVars.length > 0) {
+            throw new Error(`Missing required environment variables: ${missingVars.join(', ')}`);
+        }
 
-    const configContent = `// config.js
+        const configContent = `// config.js - Generated for production
 export const firebaseConfig = {
-  apiKey: "${process.env.FIREBASE_API_KEY}",
-  authDomain: "${process.env.FIREBASE_AUTH_DOMAIN}",
-  projectId: "${process.env.FIREBASE_PROJECT_ID}",
-  storageBucket: "${process.env.FIREBASE_STORAGE_BUCKET}",
-  messagingSenderId: "${process.env.FIREBASE_MESSAGING_SENDER_ID}",
-  appId: "${process.env.FIREBASE_APP_ID}"
+    apiKey: "${process.env.FIREBASE_API_KEY}",
+    authDomain: "${process.env.FIREBASE_AUTH_DOMAIN}",
+    projectId: "${process.env.FIREBASE_PROJECT_ID}",
+    storageBucket: "${process.env.FIREBASE_STORAGE_BUCKET}",
+    messagingSenderId: "${process.env.FIREBASE_MESSAGING_SENDER_ID}",
+    appId: "${process.env.FIREBASE_APP_ID}"
 };`;
 
-    // Write config.js to root directory
-    const configPath = path.join(process.cwd(), 'config.js');
-    console.log(`Writing config.js to: ${configPath}`);
-    fs.writeFileSync(configPath, configContent);
-    
-    // Verify config file was created
-    if (fs.existsSync(configPath)) {
-        console.log('Generated config.js successfully');
-        console.log(`Config file size: ${fs.statSync(configPath).size} bytes`);
-        console.log('Config file contents:', configContent);
-    } else {
-        throw new Error('Config file was not created');
+        // Write config.js to root directory
+        const configPath = path.join(process.cwd(), 'config.js');
+        console.log(`Writing config.js to: ${configPath}`);
+        fs.writeFileSync(configPath, configContent);
+        
+        // Verify config file was created
+        if (fs.existsSync(configPath)) {
+            console.log('Generated config.js successfully');
+            console.log(`Config file size: ${fs.statSync(configPath).size} bytes`);
+        } else {
+            throw new Error('Config file was not created');
+        }
+    } catch (error) {
+        console.error('Error generating config.js:', error);
+        process.exit(1);
     }
-} catch (error) {
-    console.error('Error generating config.js:', error);
-    process.exit(1);
+} else {
+    console.log('\nSkipping config.js generation in development mode');
 }
 
 // List all files in the root directory

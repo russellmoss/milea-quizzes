@@ -10,519 +10,461 @@ import {
     getFirestore, 
     doc, 
     getDoc, 
-    updateDoc,
     collection, 
     query, 
     where, 
     getDocs,
-    serverTimestamp 
+    updateDoc,
+    serverTimestamp
 } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
 
 // Import Firebase config
 import { firebaseConfig } from './config.js';
 
 // Initialize Firebase
-let auth;
-let db;
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db = getFirestore(app);
 
-async function initializeFirebase() {
-    try {
-        const app = initializeApp(firebaseConfig);
-        auth = getAuth(app);
-        db = getFirestore(app);
+// Global variables
+let currentUser = null;
+let submissions = []; // Store submissions globally
+let currentSubmission = null; // Store current submission being viewed/graded
 
-        // Make Firebase available globally
-        window.auth = auth;
-        window.db = db;
-        window.firebase = {
-            signInWithEmailAndPassword,
-            signOut,
-            doc,
-            getDoc,
-            updateDoc,
-            collection,
-            query,
-            where,
-            getDocs,
-            serverTimestamp
-        };
-
-        // Auth state observer
-        onAuthStateChanged(auth, async (user) => {
-            if (user) {
-                // Check if user is admin
-                const userDoc = await getDoc(doc(db, 'users', user.uid));
-                const userData = userDoc.data();
-                
-                if (!userData || !userData.isAdmin) {
-                    alert('Access denied. Admin privileges required.');
-                    signOut(auth);
-                    return;
-                }
-                
-                // Load dashboard data
-                loadDashboardData();
-            } else {
-                // Redirect to login if not authenticated
-                window.location.href = '/admin-login.html';
-            }
-        });
-
-        console.log('Firebase initialized successfully');
-    } catch (error) {
-        console.error('Error initializing Firebase:', error);
-    }
-}
-
-// Initialize Firebase when the page loads
-initializeFirebase();
-
-// Function to update question points
-async function updateQuestionPoints(submissionId, questionIndex, points, comment) {
-    try {
-        console.log('Updating points for submission:', submissionId, 'question:', questionIndex);
-        const submissionRef = doc(db, 'quiz_submissions', submissionId);
-        const submissionDoc = await getDoc(submissionRef);
-        
-        if (!submissionDoc.exists()) {
-            throw new Error('Submission not found');
+// Auth state observer
+onAuthStateChanged(auth, async (user) => {
+    currentUser = user;
+    if (user) {
+        // Check if user is admin
+        const userDoc = await getDoc(doc(db, 'users', user.uid));
+        if (userDoc.exists() && userDoc.data().isAdmin) {
+            document.getElementById('authModal').classList.add('hidden');
+            document.getElementById('mainApp').classList.remove('hidden');
+            loadDashboardData();
+        } else {
+            alert('You do not have admin access.');
+            signOut(auth);
         }
-
-        const submission = submissionDoc.data();
-        const questionResults = [...submission.questionResults];
-        
-        // Update the specific question
-        questionResults[questionIndex] = {
-            ...questionResults[questionIndex],
-            points: parseInt(points) || 0,
-            comment: comment || '',
-            isCorrect: parseInt(points) > 0
-        };
-
-        // Calculate new total score and percentage
-        const totalScore = questionResults.reduce((sum, result) => sum + (parseInt(result.points) || 0), 0);
-        const maxScore = questionResults.reduce((sum, result) => sum + (parseInt(result.maxPoints) || 0), 0);
-        const percentage = Math.round((totalScore / maxScore) * 100);
-
-        // Update the submission
-        await updateDoc(submissionRef, {
-            questionResults: questionResults,
-            score: totalScore,
-            percentage: percentage,
-            gradedAt: serverTimestamp(),
-            gradedBy: auth.currentUser.uid,
-            status: 'graded'
-        });
-
-        // Show success message
-        const successMessage = document.createElement('div');
-        successMessage.className = 'fixed top-4 right-4 bg-green-500 text-white px-4 py-2 rounded shadow-lg z-50';
-        successMessage.textContent = 'Points updated successfully!';
-        document.body.appendChild(successMessage);
-        
-        // Remove success message after 2 seconds
-        setTimeout(() => {
-            successMessage.remove();
-        }, 2000);
-
-        // Refresh the submission view
-        await viewSubmission(submissionId);
-
-    } catch (error) {
-        console.error('Error updating submission:', error);
-        alert('Error updating points: ' + error.message);
+    } else {
+        document.getElementById('authModal').classList.remove('hidden');
+        document.getElementById('mainApp').classList.add('hidden');
     }
-}
+});
 
-// Function to toggle submission status
-async function toggleSubmissionStatus(submissionId, currentStatus) {
-    try {
-        const submissionRef = doc(db, 'quiz_submissions', submissionId);
-        const newStatus = currentStatus === 'pending_review' ? 'graded' : 'pending_review';
-        
-        await updateDoc(submissionRef, {
-            status: newStatus,
-            updatedAt: serverTimestamp()
-        });
-
-        // Show success message
-        const successMessage = document.createElement('div');
-        successMessage.className = 'fixed top-4 right-4 bg-green-500 text-white px-4 py-2 rounded shadow-lg z-50';
-        successMessage.textContent = `Status updated to ${newStatus === 'graded' ? 'Graded' : 'Pending Review'}`;
-        document.body.appendChild(successMessage);
-        
-        // Remove success message after 2 seconds
-        setTimeout(() => {
-            successMessage.remove();
-        }, 2000);
-
-        // Refresh the submission view
-        await viewSubmission(submissionId);
-        // Refresh the dashboard to update the list
-        await loadDashboardData();
-    } catch (error) {
-        console.error('Error toggling submission status:', error);
-        alert('Error updating status: ' + error.message);
-    }
-}
-
-// Function to view submission details
-async function viewSubmission(submissionId) {
-    try {
-        console.log('Viewing submission:', submissionId);
-        const submissionRef = doc(db, 'quiz_submissions', submissionId);
-        const submissionDoc = await getDoc(submissionRef);
-        
-        if (!submissionDoc.exists()) {
-            alert('Submission not found');
-            return;
-        }
-        
-        const submission = submissionDoc.data();
-        const modalContent = document.getElementById('submissionModalContent');
-        
-        // Create a scrollable container for the submission details
-        modalContent.innerHTML = `
-            <div class="space-y-6">
-                <div class="bg-gray-50 p-4 rounded-lg">
-                    <div class="flex justify-between items-center">
-                        <div>
-                            <h4 class="font-semibold text-gray-900">Student Information</h4>
-                            <p class="text-gray-600">Name: ${submission.userName || 'N/A'}</p>
-                            <p class="text-gray-600">Chapter: ${submission.chapterTitle || 'N/A'}</p>
-                            <p class="text-gray-600">Submitted: ${submission.submittedAt ? new Date(submission.submittedAt.toDate()).toLocaleString() : 'N/A'}</p>
-                        </div>
-                        <div class="text-right">
-                            <span class="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium ${
-                                submission.status === 'graded' ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'
-                            }">
-                                ${submission.status === 'graded' ? 'Graded' : 'Pending Review'}
-                            </span>
-                            <button onclick="toggleSubmissionStatus('${submissionId}', '${submission.status}')" 
-                                    class="mt-2 button ${submission.status === 'graded' ? 'button-secondary' : 'button-primary'}">
-                                ${submission.status === 'graded' ? 'Mark as Pending' : 'Mark as Graded'}
-                            </button>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="space-y-4">
-                    <h4 class="font-semibold text-gray-900">Quiz Results</h4>
-                    ${submission.questionResults.map((result, index) => `
-                        <div class="bg-white p-4 rounded-lg border border-gray-200">
-                            <div class="flex justify-between items-start mb-2">
-                                <h5 class="font-medium text-gray-900">Question ${index + 1}</h5>
-                                <div class="flex items-center space-x-2">
-                                    <input type="number" 
-                                           id="points-${submissionId}-${index}"
-                                           value="${result.points || 0}"
-                                           min="0"
-                                           max="${result.maxPoints}"
-                                           class="w-20 px-2 py-1 border border-gray-300 rounded"
-                                           onchange="updateQuestionPoints('${submissionId}', ${index}, this.value, document.getElementById('comment-${submissionId}-${index}').value)">
-                                    <span class="text-gray-500">/ ${result.maxPoints}</span>
-                                </div>
-                            </div>
-                            <div class="mb-2">
-                                <p class="text-gray-700">${result.question}</p>
-                            </div>
-                            <div class="mb-2">
-                                <p class="text-gray-600">Student's Answer: ${result.userAnswer || 'No answer provided'}</p>
-                            </div>
-                            <div class="mb-2">
-                                <p class="text-gray-600">Correct Answer: ${result.correctAnswer}</p>
-                            </div>
-                            <div>
-                                <label class="block text-sm font-medium text-gray-700 mb-1">Comments:</label>
-                                <textarea id="comment-${submissionId}-${index}"
-                                          class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
-                                          rows="2"
-                                          onchange="updateQuestionPoints('${submissionId}', ${index}, document.getElementById('points-${submissionId}-${index}').value, this.value)">${result.comment || ''}</textarea>
-                            </div>
-                        </div>
-                    `).join('')}
-                </div>
-
-                <div class="bg-gray-50 p-4 rounded-lg">
-                    <h4 class="font-semibold text-gray-900 mb-2">Overall Results</h4>
-                    <p class="text-gray-600">Total Score: ${submission.score || 0} / ${submission.maxScore || 0}</p>
-                    <p class="text-gray-600">Percentage: ${submission.percentage || 0}%</p>
-                </div>
-
-                <div class="flex justify-end space-x-4">
-                    <button onclick="exportSubmission('${submissionId}')" class="button button-secondary">
-                        Export
-                    </button>
-                    <button onclick="document.getElementById('submissionModal').classList.add('hidden')" class="button button-primary">
-                        Close
-                    </button>
-                </div>
-            </div>
-        `;
-
-        // Show the modal
-        document.getElementById('submissionModal').classList.remove('hidden');
-    } catch (error) {
-        console.error('Error viewing submission:', error);
-        alert('Error loading submission details: ' + error.message);
-    }
-}
-
-// Function to load dashboard data
+// Load dashboard data
 async function loadDashboardData() {
     try {
         console.log('Loading dashboard data...');
-        
         const submissionsRef = collection(db, 'quiz_submissions');
-        const querySnapshot = await getDocs(submissionsRef);
+        const q = query(submissionsRef);
+        const querySnapshot = await getDocs(q);
         
         console.log('Received snapshot with', querySnapshot.size, 'documents');
         
-        const submissionsList = document.getElementById('submissionsList');
-        submissionsList.innerHTML = '';
-        
-        let totalSubmissions = 0;
-        let pendingSubmissions = 0;
-        let gradedSubmissions = 0;
-        
-        // Get filter values
-        const currentFilter = document.querySelector('input[name="submissionFilter"]:checked').value;
-        const chapterFilter = document.getElementById('chapterFilter').value;
-        const searchEmail = document.getElementById('searchEmail').value.toLowerCase();
-        
-        // Get unique chapters for the filter dropdown
-        const chapters = new Set();
-        querySnapshot.forEach(doc => {
-            const submission = doc.data();
-            if (submission.chapterTitle) {
-                chapters.add(submission.chapterTitle);
-            }
-        });
-        
-        // Update chapter filter options if needed
-        const chapterFilterSelect = document.getElementById('chapterFilter');
-        if (chapterFilterSelect.options.length <= 2) { // Only update if we haven't populated it yet
-            chapters.forEach(chapter => {
-                if (!Array.from(chapterFilterSelect.options).some(option => option.value === chapter)) {
-                    const option = document.createElement('option');
-                    option.value = chapter;
-                    option.textContent = chapter;
-                    chapterFilterSelect.appendChild(option);
-                }
-            });
-        }
+        submissions = []; // Reset submissions array
+        let pendingCount = 0;
+        let gradedCount = 0;
         
         querySnapshot.forEach((doc) => {
-            const submission = { id: doc.id, ...doc.data() };
-            console.log('Processing submission:', submission);
+            console.log('Processing submission:', doc.data());
+            const submission = {
+                id: doc.id,
+                ...doc.data()
+            };
+            submissions.push(submission);
             
-            // Apply filters
-            if (currentFilter === 'pending' && submission.status !== 'pending_review') return;
-            if (currentFilter === 'graded' && submission.status !== 'graded') return;
-            if (chapterFilter !== 'all' && submission.chapterTitle !== chapterFilter) return;
-            if (searchEmail && (!submission.userEmail || !submission.userEmail.toLowerCase().includes(searchEmail))) return;
-            
-            totalSubmissions++;
             if (submission.status === 'pending_review') {
-                pendingSubmissions++;
-            } else if (submission.status === 'graded') {
-                gradedSubmissions++;
+                pendingCount++;
+            } else {
+                gradedCount++;
             }
-            
-            const submissionElement = document.createElement('div');
-            submissionElement.className = 'bg-white p-4 rounded-lg shadow mb-4';
-            submissionElement.innerHTML = `
-                <div class="flex justify-between items-center">
-                    <div>
-                        <h3 class="font-semibold">${submission.userName || 'Anonymous'}</h3>
-                        <p class="text-sm text-gray-600">${submission.chapterTitle || 'Untitled Chapter'}</p>
-                        <p class="text-sm text-gray-500">${submission.userEmail || 'No email provided'}</p>
-                        <p class="text-sm ${submission.status === 'graded' ? 'text-green-600' : 'text-yellow-600'}">
-                            ${submission.status === 'graded' ? 'Graded' : 'Pending Review'}
-                        </p>
-                    </div>
-                    <div class="text-right">
-                        <p class="text-sm text-gray-600">Submitted: ${submission.submittedAt ? new Date(submission.submittedAt.toDate()).toLocaleString() : 'N/A'}</p>
-                        <button onclick="viewSubmission('${doc.id}')" 
-                                class="button button-primary mt-2">
-                            ${submission.status === 'graded' ? 'View Submission' : 'Grade Submission'}
-                        </button>
-                    </div>
-                </div>
-            `;
-            
-            submissionsList.appendChild(submissionElement);
         });
         
-        console.log('Total submissions found:', totalSubmissions);
-        console.log('Submissions with pending review:', pendingSubmissions);
-        console.log('Graded submissions:', gradedSubmissions);
+        console.log('Total submissions found:', submissions.length);
+        console.log('Submissions with pending review:', pendingCount);
+        console.log('Graded submissions:', gradedCount);
         
-        // Update dashboard stats
-        document.getElementById('totalSubmissions').textContent = totalSubmissions;
-        document.getElementById('pendingSubmissions').textContent = pendingSubmissions;
-        
+        updateDashboardUI();
     } catch (error) {
         console.error('Error loading dashboard data:', error);
-        alert('Error loading dashboard data: ' + error.message);
+        alert('Error loading dashboard data. Please try again.');
     }
 }
 
-// Add event listeners for filter changes
-document.addEventListener('DOMContentLoaded', () => {
-    const filterInputs = document.querySelectorAll('input[name="submissionFilter"]');
-    filterInputs.forEach(input => {
-        input.addEventListener('change', loadDashboardData);
+function updateDashboardUI() {
+    const submissionsList = document.getElementById('submissionsList');
+    if (!submissionsList) {
+        console.error('Submissions list element not found');
+        return;
+    }
+    
+    submissionsList.innerHTML = '';
+    
+    // Get filter values
+    const searchEmail = document.getElementById('searchEmail')?.value.toLowerCase() || '';
+    const statusFilter = document.querySelector('input[name="submissionFilter"]:checked')?.value || 'all';
+    const chapterFilter = document.getElementById('chapterFilter')?.value || 'all';
+    
+    // Filter submissions
+    const filteredSubmissions = submissions.filter(submission => {
+        const matchesEmail = submission.userEmail.toLowerCase().includes(searchEmail);
+        const matchesStatus = statusFilter === 'all' || 
+            (statusFilter === 'pending' && submission.status === 'pending_review') ||
+            (statusFilter === 'graded' && submission.status === 'graded');
+        const matchesChapter = chapterFilter === 'all' || submission.chapterTitle === chapterFilter;
+        
+        return matchesEmail && matchesStatus && matchesChapter;
     });
     
-    // Add event listener for chapter filter
-    document.getElementById('chapterFilter').addEventListener('change', loadDashboardData);
+    // Update stats
+    document.getElementById('totalSubmissions').textContent = submissions.length;
+    document.getElementById('pendingSubmissions').textContent = submissions.filter(s => s.status === 'pending_review').length;
     
-    // Add event listener for search input (with debounce)
-    let searchTimeout;
-    document.getElementById('searchEmail').addEventListener('input', (e) => {
-        clearTimeout(searchTimeout);
-        searchTimeout = setTimeout(() => {
+    // Render submissions
+    filteredSubmissions.forEach(submission => {
+        const row = document.createElement('div');
+        row.className = 'p-4 border border-gray-200 rounded-lg hover:bg-gray-50';
+        
+        const statusClass = submission.status === 'pending_review' ? 'text-yellow-600' : 'text-green-600';
+        const statusText = submission.status === 'pending_review' ? 'Pending Review' : 'Graded';
+        
+        row.innerHTML = `
+            <div class="flex justify-between items-center">
+                <div class="flex-1">
+                    <h4 class="text-lg font-semibold">${submission.userName}</h4>
+                    <p class="text-sm text-gray-600">${submission.userEmail}</p>
+                </div>
+                <div class="flex-1">
+                    <p class="text-gray-700">${submission.chapterTitle}</p>
+                    <p class="text-sm text-gray-600">Score: ${submission.score}/${submission.maxScore}</p>
+                </div>
+                <div class="flex-1">
+                    <span class="${statusClass}">${statusText}</span>
+                </div>
+                <div class="flex space-x-2">
+                    <button onclick="viewSubmission('${submission.id}')" class="button button-secondary">View</button>
+                    ${submission.status === 'pending_review' ? 
+                        `<button onclick="gradeSubmission('${submission.id}')" class="button button-primary">Grade</button>` : 
+                        ''}
+                </div>
+            </div>
+        `;
+        
+        submissionsList.appendChild(row);
+    });
+}
+
+// View submission details
+window.viewSubmission = function(submissionId) {
+    const submission = submissions.find(s => s.id === submissionId);
+    if (!submission) {
+        alert('Submission not found');
+        return;
+    }
+    
+    currentSubmission = submission;
+    const modal = document.getElementById('submissionModal');
+    const content = document.getElementById('submissionContent');
+    
+    let html = `
+        <div class="space-y-4">
+            <div>
+                <h3 class="text-lg font-semibold">Student Information</h3>
+                <p>Name: ${submission.userName}</p>
+                <p>Email: ${submission.userEmail}</p>
+            </div>
+            <div>
+                <h3 class="text-lg font-semibold">Quiz Information</h3>
+                <p>Chapter: ${submission.chapterTitle}</p>
+                <p>Score: ${submission.score}/${submission.maxScore}</p>
+                <p>Status: ${submission.status}</p>
+            </div>
+            <div>
+                <h3 class="text-lg font-semibold">Answers</h3>
+                ${submission.questionResults.map((result, index) => `
+                    <div class="mt-4 p-4 border border-gray-200 rounded-lg">
+                        <h4 class="font-semibold">Question ${index + 1}</h4>
+                        <p class="text-gray-700">${result.question}</p>
+                        <div class="mt-2">
+                            <strong>Student Answer:</strong>
+                            <div class="text-gray-600 mt-1">${formatAdminUserAnswer(result)}</div>
+                        </div>
+                        <div class="mt-2">
+                            <strong>Model Answer:</strong>
+                            <div class="text-gray-600 mt-1 bg-blue-50 p-2 rounded">${Array.isArray(result.correctAnswer) ? result.correctAnswer.join(' to ') : result.correctAnswer}</div>
+                        </div>
+                        ${result.explanation ? `<p class="text-sm text-gray-500 mt-2">${result.explanation}</p>` : ''}
+                        <div class="mt-2">
+                            <strong>Points:</strong>
+                            <span class="${result.isCorrect ? 'text-green-600' : 'text-red-600'}">${result.points}/${result.maxPoints}</span>
+                        </div>
+                        ${result.adminComment ? `
+                            <div class="mt-2">
+                                <strong>Admin Comment:</strong>
+                                <div class="text-gray-600 mt-1 bg-gray-50 p-2 rounded">${result.adminComment}</div>
+                            </div>
+                        ` : ''}
+                    </div>
+                `).join('')}
+            </div>
+        </div>
+    `;
+    
+    content.innerHTML = html;
+    modal.classList.remove('hidden');
+};
+
+// Grade submission
+window.gradeSubmission = function(submissionId) {
+    const submission = submissions.find(s => s.id === submissionId);
+    if (!submission) {
+        alert('Submission not found');
+        return;
+    }
+    
+    currentSubmission = submission;
+    const modal = document.getElementById('submissionModal');
+    const content = document.getElementById('submissionContent');
+    
+    let html = `
+        <form id="gradeForm" class="space-y-4">
+            <div>
+                <h3 class="text-lg font-semibold">Student Information</h3>
+                <p>Name: ${submission.userName}</p>
+                <p>Email: ${submission.userEmail}</p>
+            </div>
+            <div>
+                <h3 class="text-lg font-semibold">Quiz Information</h3>
+                <p>Chapter: ${submission.chapterTitle}</p>
+                <p>Current Score: ${submission.score}/${submission.maxScore}</p>
+            </div>
+            <div>
+                <h3 class="text-lg font-semibold">Grade Answers</h3>
+                ${submission.questionResults.map((result, index) => `
+                    <div class="mt-4 p-4 border border-gray-200 rounded-lg">
+                        <h4 class="font-semibold">Question ${index + 1}</h4>
+                        <p class="text-gray-700">${result.question}</p>
+                        <div class="mt-2">
+                            <strong>Student Answer:</strong>
+                            <div class="text-gray-600 mt-1">${formatAdminUserAnswer(result)}</div>
+                        </div>
+                        <div class="mt-2">
+                            <strong>Model Answer:</strong>
+                            <div class="text-gray-600 mt-1 bg-blue-50 p-2 rounded">${Array.isArray(result.correctAnswer) ? result.correctAnswer.join(' to ') : result.correctAnswer}</div>
+                        </div>
+                        ${result.explanation ? `<p class="text-sm text-gray-500 mt-2">${result.explanation}</p>` : ''}
+                        <div class="mt-4 space-y-2">
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700">Points (max ${result.maxPoints}):</label>
+                                <input type="number" 
+                                       name="points_${index}" 
+                                       min="0" 
+                                       max="${result.maxPoints}" 
+                                       value="${result.points}"
+                                       class="mt-1 block w-20 rounded-md border-gray-300 shadow-sm focus:border-primary focus:ring-primary">
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700">Comments:</label>
+                                <textarea name="comment_${index}" 
+                                          rows="3" 
+                                          class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary focus:ring-primary"
+                                          placeholder="Add your feedback here...">${result.adminComment || ''}</textarea>
+                            </div>
+                        </div>
+                    </div>
+                `).join('')}
+            </div>
+            <div class="flex justify-end space-x-4">
+                <button type="button" 
+                        onclick="closeModal()" 
+                        class="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50">
+                    Cancel
+                </button>
+                <button type="submit" 
+                        class="px-4 py-2 bg-primary text-white rounded-md hover:bg-primary-dark">
+                    Submit Grade
+                </button>
+            </div>
+        </form>
+    `;
+    
+    content.innerHTML = html;
+    modal.classList.remove('hidden');
+    
+    // Handle form submission
+    document.getElementById('gradeForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        
+        const formData = new FormData(e.target);
+        const updatedResults = submission.questionResults.map((result, index) => ({
+            ...result,
+            points: parseInt(formData.get(`points_${index}`)) || 0,
+            adminComment: formData.get(`comment_${index}`) || ''
+        }));
+        
+        const totalPoints = updatedResults.reduce((sum, result) => sum + result.points, 0);
+        
+        try {
+            const submissionRef = doc(db, 'quiz_submissions', submissionId);
+            await updateDoc(submissionRef, {
+                questionResults: updatedResults,
+                score: totalPoints,
+                percentage: Math.round((totalPoints / submission.maxScore) * 100),
+                status: 'graded',
+                gradedAt: serverTimestamp(),
+                gradedBy: currentUser.uid
+            });
+            
+            alert('Submission graded successfully!');
+            closeModal();
             loadDashboardData();
-        }, 300);
+        } catch (error) {
+            console.error('Error grading submission:', error);
+            alert('Error grading submission. Please try again.');
+        }
     });
+};
+
+// Export to PDF
+window.exportToPDF = function() {
+    if (!currentSubmission) return;
+
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF();
+    
+    // Add title
+    doc.setFontSize(20);
+    doc.text('Quiz Submission Review', 20, 20);
+    
+    // Add student info
+    doc.setFontSize(12);
+    doc.text(`Student: ${currentSubmission.userName}`, 20, 30);
+    doc.text(`Email: ${currentSubmission.userEmail}`, 20, 40);
+    doc.text(`Chapter: ${currentSubmission.chapterTitle}`, 20, 50);
+    doc.text(`Score: ${currentSubmission.score}/${currentSubmission.maxScore}`, 20, 60);
+    
+    // Add questions and answers
+    let y = 80;
+    currentSubmission.questionResults.forEach((result, index) => {
+        // Question
+        doc.setFontSize(14);
+        doc.text(`Question ${index + 1}:`, 20, y);
+        y += 10;
+        
+        doc.setFontSize(12);
+        const questionLines = doc.splitTextToSize(result.question, 170);
+        doc.text(questionLines, 20, y);
+        y += questionLines.length * 7;
+        
+        // Student Answer
+        doc.setFontSize(12);
+        doc.text('Student Answer:', 20, y);
+        y += 7;
+        
+        const studentAnswer = formatAdminUserAnswer(result);
+        const studentAnswerLines = doc.splitTextToSize(studentAnswer, 170);
+        doc.text(studentAnswerLines, 20, y);
+        y += studentAnswerLines.length * 7;
+        
+        // Model Answer
+        doc.text('Model Answer:', 20, y);
+        y += 7;
+        
+        const modelAnswer = Array.isArray(result.correctAnswer) ? 
+            result.correctAnswer.join(' to ') : 
+            result.correctAnswer;
+        const modelAnswerLines = doc.splitTextToSize(modelAnswer, 170);
+        doc.text(modelAnswerLines, 20, y);
+        y += modelAnswerLines.length * 7;
+        
+        // Points and Comments
+        doc.text(`Points: ${result.points}/${result.maxPoints}`, 20, y);
+        y += 7;
+        
+        if (result.adminComment) {
+            doc.text('Admin Comments:', 20, y);
+            y += 7;
+            
+            const commentLines = doc.splitTextToSize(result.adminComment, 170);
+            doc.text(commentLines, 20, y);
+            y += commentLines.length * 7;
+        }
+        
+        // Add space between questions
+        y += 10;
+        
+        // Add new page if needed
+        if (y > 250) {
+            doc.addPage();
+            y = 20;
+        }
+    });
+    
+    // Save the PDF
+    doc.save(`quiz_submission_${currentSubmission.userName}_${currentSubmission.chapterTitle}.pdf`);
+};
+
+// Close modal
+window.closeModal = function() {
+    document.getElementById('submissionModal').classList.add('hidden');
+    currentSubmission = null;
+};
+
+// Handle login form
+document.getElementById('authForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const email = document.getElementById('email').value;
+    const password = document.getElementById('password').value;
+    
+    try {
+        await signInWithEmailAndPassword(auth, email, password);
+    } catch (error) {
+        alert('Login failed: ' + error.message);
+    }
 });
 
-// Function to export submission as PDF
-async function exportSubmission(submissionId) {
-    try {
-        const submissionRef = doc(db, 'quiz_submissions', submissionId);
-        const submissionDoc = await getDoc(submissionRef);
-        
-        if (!submissionDoc.exists()) {
-            throw new Error('Submission not found');
-        }
+// Handle logout
+window.logout = function() {
+    signOut(auth);
+};
 
-        const submission = submissionDoc.data();
-        
-        // Create new PDF document
-        const { jsPDF } = window.jspdf;
-        const pdfDoc = new jsPDF();
-        
-        // Set margins
-        const margin = 20;
-        const pageWidth = pdfDoc.internal.pageSize.width;
-        const pageHeight = pdfDoc.internal.pageSize.height;
-        const contentWidth = pageWidth - (2 * margin);
-        
-        // Function to add text with word wrap and page breaks
-        function addTextWithWrap(text, x, y, maxWidth, fontSize = 10) {
-            pdfDoc.setFontSize(fontSize);
-            const lines = pdfDoc.splitTextToSize(text, maxWidth);
-            
-            // Check if we need a new page
-            const lineHeight = fontSize * 0.35;
-            const totalHeight = lines.length * lineHeight;
-            
-            if (y + totalHeight > pageHeight - margin) {
-                pdfDoc.addPage();
-                y = margin;
-            }
-            
-            pdfDoc.text(lines, x, y);
-            return y + totalHeight + 5; // Return new y position
+// Format user answer for admin view
+function formatAdminUserAnswer(result) {
+    if (typeof result.userAnswer === 'object' && result.userAnswer !== null) {
+        if (Array.isArray(result.userAnswer)) {
+            return result.userAnswer.join(' to ');
+        } else if (result.userAnswer.profile1) {
+            // Profile-strategy format
+            return `
+                Profile 1: ${result.userAnswer.profile1 || 'Not provided'}
+                Strategy 1: ${result.userAnswer.strategy1 || 'Not provided'}
+                Profile 2: ${result.userAnswer.profile2 || 'Not provided'}
+                Strategy 2: ${result.userAnswer.strategy2 || 'Not provided'}
+                Profile 3: ${result.userAnswer.profile3 || 'Not provided'}
+                Strategy 3: ${result.userAnswer.strategy3 || 'Not provided'}
+            `;
         }
-        
-        // Add title
-        pdfDoc.setFontSize(20);
-        pdfDoc.text('Quiz Submission Report', pageWidth / 2, margin, { align: 'center' });
-        let yPosition = margin + 15;
-        
-        // Add student information
-        yPosition = addTextWithWrap(`Student: ${submission.userName || 'Anonymous'}`, margin, yPosition, contentWidth, 12);
-        yPosition = addTextWithWrap(`Chapter: ${submission.chapterTitle || 'Untitled Chapter'}`, margin, yPosition, contentWidth, 12);
-        yPosition = addTextWithWrap(`Submitted: ${submission.submittedAt ? new Date(submission.submittedAt.toDate()).toLocaleString() : 'N/A'}`, margin, yPosition, contentWidth, 12);
-        
-        yPosition += 10; // Add some space
-        
-        // Add score summary
-        pdfDoc.setFontSize(14);
-        pdfDoc.text('Score Summary', margin, yPosition);
-        yPosition += 10;
-        
-        yPosition = addTextWithWrap(`Total Score: ${submission.score || 0} / ${submission.maxScore || 0}`, margin, yPosition, contentWidth, 12);
-        yPosition = addTextWithWrap(`Percentage: ${submission.percentage || 0}%`, margin, yPosition, contentWidth, 12);
-        
-        yPosition += 15; // Add some space
-        
-        // Add questions and answers
-        pdfDoc.setFontSize(14);
-        pdfDoc.text('Question Details', margin, yPosition);
-        yPosition += 10;
-        
-        submission.questionResults.forEach((result, index) => {
-            // Add question number
-            pdfDoc.setFontSize(12);
-            pdfDoc.text(`Question ${index + 1}`, margin, yPosition);
-            yPosition += 7;
-            
-            // Add question text
-            yPosition = addTextWithWrap(result.question, margin + 5, yPosition, contentWidth - 10);
-            
-            // Add student's answer
-            pdfDoc.setFontSize(10);
-            pdfDoc.text('Student\'s Answer:', margin + 5, yPosition);
-            yPosition += 5;
-            yPosition = addTextWithWrap(result.userAnswer || 'No answer provided', margin + 10, yPosition, contentWidth - 15);
-            
-            // Add correct answer
-            pdfDoc.text('Correct Answer:', margin + 5, yPosition);
-            yPosition += 5;
-            yPosition = addTextWithWrap(result.correctAnswer, margin + 10, yPosition, contentWidth - 15);
-            
-            // Add points
-            yPosition = addTextWithWrap(`Points: ${result.points || 0} / ${result.maxPoints}`, margin + 5, yPosition, contentWidth - 10);
-            
-            // Add comments if they exist
-            if (result.comment) {
-                pdfDoc.text('Comments:', margin + 5, yPosition);
-                yPosition += 5;
-                yPosition = addTextWithWrap(result.comment, margin + 10, yPosition, contentWidth - 15);
-            }
-            
-            yPosition += 10; // Add space between questions
-            
-            // Add separator line if not at the bottom of the page
-            if (yPosition < pageHeight - margin) {
-                pdfDoc.setDrawColor(200, 200, 200);
-                pdfDoc.line(margin, yPosition, pageWidth - margin, yPosition);
-                yPosition += 10;
-            }
-        });
-        
-        // Save the PDF
-        pdfDoc.save(`quiz-submission-${submissionId}.pdf`);
-        
-        // Show success message
-        const successMessage = document.createElement('div');
-        successMessage.className = 'fixed top-4 right-4 bg-green-500 text-white px-4 py-2 rounded shadow-lg z-50';
-        successMessage.textContent = 'PDF exported successfully!';
-        document.body.appendChild(successMessage);
-        
-        // Remove success message after 2 seconds
-        setTimeout(() => {
-            successMessage.remove();
-        }, 2000);
-        
-    } catch (error) {
-        console.error('Error exporting submission:', error);
-        alert('Error exporting submission: ' + error.message);
     }
+    return result.userAnswer || 'No answer provided';
 }
 
-// Make functions available globally
-window.updateQuestionPoints = updateQuestionPoints;
-window.viewSubmission = viewSubmission;
-window.loadDashboardData = loadDashboardData;
-window.exportSubmission = exportSubmission;
-window.toggleSubmissionStatus = toggleSubmissionStatus;
-
-// Handle logout
-document.getElementById('logoutButton').addEventListener('click', () => {
-    signOut(auth);
+// Add event listeners for filters
+document.addEventListener('DOMContentLoaded', function() {
+    // Status filter
+    const statusFilters = document.querySelectorAll('input[name="submissionFilter"]');
+    statusFilters.forEach(filter => {
+        filter.addEventListener('change', loadDashboardData);
+    });
+    
+    // Chapter filter
+    const chapterFilter = document.getElementById('chapterFilter');
+    if (chapterFilter) {
+        chapterFilter.addEventListener('change', loadDashboardData);
+    }
+    
+    // Search input
+    const searchInput = document.getElementById('searchEmail');
+    if (searchInput) {
+        searchInput.addEventListener('input', loadDashboardData);
+    }
 });

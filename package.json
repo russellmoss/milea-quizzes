@@ -9,13 +9,15 @@
     "vercel-build": "node build.js"
   },
   "dependencies": {
+    "dotenv": "^16.5.0",
+    "firebase": "^11.8.1",
     "serve": "^14.2.1",
     "tailwindcss": "^3.4.1"
   },
   "devDependencies": {
-    "tailwindcss": "^3.4.1",
+    "autoprefixer": "^10.4.16",
     "postcss": "^8.4.38",
-    "autoprefixer": "^10.4.16"
+    "tailwindcss": "^3.4.1"
   },
   "engines": {
     "node": ">=18.0.0"

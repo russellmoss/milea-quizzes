@@ -86,6 +86,11 @@
                     <p class="text-gray-600 mb-4">First Impressions Core Concepts</p>
                     <button onclick="window.startQuiz(1)" class="button button-primary w-full">Start Quiz</button>
                 </div>
+                <div class="bg-white rounded-lg shadow-md p-6 border-l-4 border-primary">
+                    <h3 class="text-lg font-semibold mb-2">Chapter 2</h3>
+                    <p class="text-gray-600 mb-4">Rapport & Needs Fundamentals</p>
+                    <button onclick="window.startQuiz(2)" class="button button-primary w-full">Start Quiz</button>
+                </div>
                 <!-- Add more chapters as needed -->
             </div>
         </div>
@@ -94,7 +99,7 @@
         <div id="quizInterface" class="hidden max-w-4xl mx-auto px-4 py-8">
             <div class="bg-white rounded-lg shadow-lg p-8">
                 <div class="mb-6">
-                    <h2 class="text-2xl font-bold text-gray-800 mb-2">Chapter 1: First Impressions Core Concepts</h2>
+                    <h2 class="text-2xl font-bold text-gray-800 mb-2" id="quizTitle"></h2>
                     <div class="w-full bg-gray-200 rounded-full h-2">
                         <div id="progressBar" class="bg-primary h-2 rounded-full" style="width: 0%"></div>
                     </div>
