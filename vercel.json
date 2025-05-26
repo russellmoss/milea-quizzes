@@ -4,11 +4,28 @@
   "outputDirectory": ".",
   "rewrites": [
     {
+      "source": "/config.js",
+      "destination": "/config.js"
+    },
+    {
       "source": "/(.*)",
       "destination": "/index.html"
     }
   ],
   "headers": [
+    {
+      "source": "/config.js",
+      "headers": [
+        {
+          "key": "Content-Type",
+          "value": "application/javascript"
+        },
+        {
+          "key": "Cache-Control",
+          "value": "no-cache, no-store, must-revalidate"
+        }
+      ]
+    },
     {
       "source": "/(.*)\\.js",
       "headers": [
