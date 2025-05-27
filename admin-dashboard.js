@@ -619,6 +619,7 @@ async function loadDashboardData() {
         submissions = []; // Reset submissions array
         let pendingCount = 0;
         let gradedCount = 0;
+        const uniqueChapters = new Set(); // Track unique chapters
         
         querySnapshot.forEach((doc) => {
             console.log('Processing submission:', doc.data());
@@ -628,12 +629,39 @@ async function loadDashboardData() {
             };
             submissions.push(submission);
             
+            // Add chapter to unique chapters set
+            if (submission.chapterTitle) {
+                uniqueChapters.add(submission.chapterTitle);
+            }
+            
             if (submission.status === 'pending_review') {
                 pendingCount++;
             } else {
                 gradedCount++;
             }
         });
+        
+        // Update chapter filter options
+        const chapterFilter = document.getElementById('chapterFilter');
+        if (chapterFilter) {
+            // Keep the "All Chapters" option
+            chapterFilter.innerHTML = '<option value="all">All Chapters</option>';
+            
+            // Add unique chapters sorted by chapter number
+            Array.from(uniqueChapters)
+                .sort((a, b) => {
+                    // Extract chapter numbers and compare
+                    const numA = parseInt(a.match(/Chapter (\d+)/)?.[1] || '0');
+                    const numB = parseInt(b.match(/Chapter (\d+)/)?.[1] || '0');
+                    return numA - numB;
+                })
+                .forEach(chapter => {
+                    const option = document.createElement('option');
+                    option.value = chapter;
+                    option.textContent = chapter;
+                    chapterFilter.appendChild(option);
+                });
+        }
         
         console.log('Total submissions found:', submissions.length);
         console.log('Submissions with pending review:', pendingCount);
@@ -657,23 +685,35 @@ function updateDashboardUI() {
     
     // Get filter values
     const searchEmail = document.getElementById('searchEmail')?.value.toLowerCase() || '';
-    const statusFilter = document.querySelector('input[name="submissionFilter"]:checked')?.value || 'all';
+    const viewFilter = document.getElementById('viewFilter')?.value || 'pending';
     const chapterFilter = document.getElementById('chapterFilter')?.value || 'all';
+    
+    console.log('Filtering with:', { searchEmail, viewFilter, chapterFilter });
     
     // Filter submissions
     const filteredSubmissions = submissions.filter(submission => {
         const matchesEmail = submission.userEmail.toLowerCase().includes(searchEmail);
-        const matchesStatus = statusFilter === 'all' || 
-            (statusFilter === 'pending' && submission.status === 'pending_review') ||
-            (statusFilter === 'graded' && submission.status === 'graded');
+        const matchesView = viewFilter === 'pending' ? 
+            submission.status === 'pending_review' : 
+            submission.status === 'graded';
         const matchesChapter = chapterFilter === 'all' || submission.chapterTitle === chapterFilter;
         
-        return matchesEmail && matchesStatus && matchesChapter;
+        console.log('Submission:', {
+            email: submission.userEmail,
+            status: submission.status,
+            chapter: submission.chapterTitle,
+            matches: { matchesEmail, matchesView, matchesChapter }
+        });
+        
+        return matchesEmail && matchesView && matchesChapter;
     });
+    
+    console.log('Filtered submissions:', filteredSubmissions.length);
     
     // Update stats
     document.getElementById('totalSubmissions').textContent = submissions.length;
     document.getElementById('pendingSubmissions').textContent = submissions.filter(s => s.status === 'pending_review').length;
+    document.getElementById('gradedSubmissions').textContent = submissions.filter(s => s.status === 'graded').length;
     
     // Render submissions
     filteredSubmissions.forEach(submission => {
@@ -1005,21 +1045,27 @@ function formatAdminUserAnswer(result) {
 
 // Add event listeners for filters
 document.addEventListener('DOMContentLoaded', function() {
-    // Status filter
-    const statusFilters = document.querySelectorAll('input[name="submissionFilter"]');
-    statusFilters.forEach(filter => {
-        filter.addEventListener('change', loadDashboardData);
-    });
+    // View filter
+    const viewFilter = document.getElementById('viewFilter');
+    if (viewFilter) {
+        viewFilter.addEventListener('change', () => {
+            updateDashboardUI(); // Only update UI, don't reload data
+        });
+    }
     
     // Chapter filter
     const chapterFilter = document.getElementById('chapterFilter');
     if (chapterFilter) {
-        chapterFilter.addEventListener('change', loadDashboardData);
+        chapterFilter.addEventListener('change', () => {
+            updateDashboardUI(); // Only update UI, don't reload data
+        });
     }
     
     // Search input
     const searchInput = document.getElementById('searchEmail');
     if (searchInput) {
-        searchInput.addEventListener('input', loadDashboardData);
+        searchInput.addEventListener('input', () => {
+            updateDashboardUI(); // Only update UI, don't reload data
+        });
     }
 });
