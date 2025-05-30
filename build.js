@@ -66,8 +66,18 @@ filesToCopy.forEach(file => {
 // Build Tailwind CSS
 try {
     console.log('Building Tailwind CSS...');
+    // First ensure src directory exists
+    if (!fs.existsSync('src')) {
+        fs.mkdirSync('src', { recursive: true });
+    }
+    
+    // Build Tailwind CSS
     execSync('npx tailwindcss -i ./src/input.css -o ./dist/output.css --minify', { stdio: 'inherit' });
     console.log('Tailwind CSS built successfully');
+    
+    // Copy the CSS file to the root directory as well for development
+    fs.copyFileSync('./dist/output.css', './output.css');
+    console.log('Copied output.css to root directory');
 } catch (error) {
     console.error('Error building Tailwind CSS:', error);
     process.exit(1);
