@@ -18,6 +18,19 @@
   ],
   "headers": [
     {
+      "source": "/output.css",
+      "headers": [
+        {
+          "key": "Content-Type",
+          "value": "text/css"
+        },
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=31536000, immutable"
+        }
+      ]
+    },
+    {
       "source": "/config.js",
       "headers": [
         {

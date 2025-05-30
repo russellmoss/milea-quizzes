@@ -65,21 +65,49 @@ filesToCopy.forEach(file => {
 
 // Build Tailwind CSS
 try {
-    console.log('Building Tailwind CSS...');
+    console.log('\n=== Starting CSS Build Process ===');
+    console.log('Current directory:', process.cwd());
+    
     // First ensure src directory exists
     if (!fs.existsSync('src')) {
+        console.log('Creating src directory...');
         fs.mkdirSync('src', { recursive: true });
     }
     
-    // Build Tailwind CSS
-    execSync('npx tailwindcss -i ./src/input.css -o ./dist/output.css --minify', { stdio: 'inherit' });
-    console.log('Tailwind CSS built successfully');
+    // Check if input.css exists
+    const inputCssPath = './src/input.css';
+    if (!fs.existsSync(inputCssPath)) {
+        console.error('Error: input.css not found at', inputCssPath);
+        process.exit(1);
+    }
+    console.log('Found input.css at:', inputCssPath);
     
-    // Copy the CSS file to the root directory as well for development
-    fs.copyFileSync('./dist/output.css', './output.css');
-    console.log('Copied output.css to root directory');
+    // Build Tailwind CSS
+    console.log('\nBuilding Tailwind CSS...');
+    const outputCssPath = './dist/output.css';
+    execSync(`npx tailwindcss -i ${inputCssPath} -o ${outputCssPath} --minify`, { stdio: 'inherit' });
+    
+    // Verify the output file exists and has content
+    if (fs.existsSync(outputCssPath)) {
+        const stats = fs.statSync(outputCssPath);
+        console.log(`\nCSS build successful!`);
+        console.log(`Output file: ${outputCssPath}`);
+        console.log(`File size: ${stats.size} bytes`);
+        
+        // Copy to root directory
+        fs.copyFileSync(outputCssPath, './output.css');
+        console.log('Copied output.css to root directory');
+        
+        // Log the first few lines of the CSS file
+        const cssContent = fs.readFileSync(outputCssPath, 'utf8');
+        console.log('\nFirst 200 characters of generated CSS:');
+        console.log(cssContent.substring(0, 200));
+    } else {
+        console.error('Error: output.css was not created');
+        process.exit(1);
+    }
 } catch (error) {
-    console.error('Error building Tailwind CSS:', error);
+    console.error('\nError building Tailwind CSS:', error);
     process.exit(1);
 }
 
