@@ -1,3 +1,4 @@
+require('dotenv').config();
 const fs = require('fs');
 const path = require('path');
 const { execSync } = require('child_process');
@@ -40,69 +41,52 @@ dirs.forEach(dir => {
     }
 });
 
-// Build Tailwind CSS
-console.log('\nBuilding Tailwind CSS...');
-try {
-    const cssOutputPath = path.join(process.cwd(), 'dist', 'output.css');
-    console.log(`CSS output path: ${cssOutputPath}`);
-    
-    execSync('npx tailwindcss -i ./src/input.css -o ./dist/output.css', { 
-        stdio: 'inherit',
-        cwd: process.cwd()
-    });
-    
-    // Verify CSS file was created
-    if (fs.existsSync(cssOutputPath)) {
-        console.log('CSS build completed successfully');
-        console.log(`CSS file size: ${fs.statSync(cssOutputPath).size} bytes`);
-    } else {
-        throw new Error('CSS file was not created');
+// Ensure the dist directory exists
+if (!fs.existsSync('dist')) {
+    fs.mkdirSync('dist');
+}
+
+// Copy static files
+const filesToCopy = [
+    'index.html',
+    'quiz-app.html',
+    'admin.html',
+    'quiz-app.js',
+    'admin-dashboard.js',
+    'config.js'
+];
+
+filesToCopy.forEach(file => {
+    if (fs.existsSync(file)) {
+        fs.copyFileSync(file, path.join('dist', file));
+        console.log(`Copied ${file} to dist/`);
     }
+});
+
+// Build Tailwind CSS
+try {
+    console.log('Building Tailwind CSS...');
+    execSync('npx tailwindcss -i ./src/input.css -o ./dist/output.css --minify', { stdio: 'inherit' });
+    console.log('Tailwind CSS built successfully');
 } catch (error) {
-    console.error('Error building CSS:', error);
+    console.error('Error building Tailwind CSS:', error);
     process.exit(1);
 }
 
-// Generate config.js
-console.log('\nGenerating config.js...');
-try {
-    // Check if all required environment variables are set
-    const missingVars = requiredEnvVars.filter(varName => !process.env[varName]);
-    if (missingVars.length > 0) {
-        throw new Error(`Missing required environment variables: ${missingVars.join(', ')}`);
-    }
-
-    const configContent = `// config.js - Generated for production
-export const firebaseConfig = {
-    apiKey: "${process.env.FIREBASE_API_KEY}",
-    authDomain: "${process.env.FIREBASE_AUTH_DOMAIN}",
-    projectId: "${process.env.FIREBASE_PROJECT_ID}",
-    storageBucket: "${process.env.FIREBASE_STORAGE_BUCKET}",
-    messagingSenderId: "${process.env.FIREBASE_MESSAGING_SENDER_ID}",
-    appId: "${process.env.FIREBASE_APP_ID}"
-};`;
-
-    // Write config.js to root directory
-    const configPath = path.join(process.cwd(), 'config.js');
-    console.log(`Writing config.js to: ${configPath}`);
-    fs.writeFileSync(configPath, configContent);
+// Handle config.js for Vercel deployment
+if (process.env.VERCEL) {
+    console.log('Vercel environment detected, creating config.js from environment variables...');
+    const configContent = `export const firebaseConfig = {
+        apiKey: "${process.env.FIREBASE_API_KEY}",
+        authDomain: "${process.env.FIREBASE_AUTH_DOMAIN}",
+        projectId: "${process.env.FIREBASE_PROJECT_ID}",
+        storageBucket: "${process.env.FIREBASE_STORAGE_BUCKET}",
+        messagingSenderId: "${process.env.FIREBASE_MESSAGING_SENDER_ID}",
+        appId: "${process.env.FIREBASE_APP_ID}"
+    };`;
     
-    // Also write to dist directory for backup
-    const distConfigPath = path.join(process.cwd(), 'dist', 'config.js');
-    console.log(`Writing config.js to dist directory: ${distConfigPath}`);
-    fs.writeFileSync(distConfigPath, configContent);
-    
-    // Verify config files were created
-    if (fs.existsSync(configPath) && fs.existsSync(distConfigPath)) {
-        console.log('Generated config.js successfully in both locations');
-        console.log(`Root config file size: ${fs.statSync(configPath).size} bytes`);
-        console.log(`Dist config file size: ${fs.statSync(distConfigPath).size} bytes`);
-    } else {
-        throw new Error('Config files were not created');
-    }
-} catch (error) {
-    console.error('Error generating config.js:', error);
-    process.exit(1);
+    fs.writeFileSync(path.join('dist', 'config.js'), configContent);
+    console.log('Created config.js from environment variables');
 }
 
 // List all files in the root directory
@@ -117,4 +101,6 @@ console.log('\nFiles in dist directory:');
 fs.readdirSync(path.join(process.cwd(), 'dist')).forEach(file => {
     const stats = fs.statSync(path.join(process.cwd(), 'dist', file));
     console.log(`${file} (${stats.size} bytes)`);
-}); 
+});
+
+console.log('Build completed successfully!'); 

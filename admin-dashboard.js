@@ -34,26 +34,38 @@ const db = getFirestore(app);
 let currentUser = null;
 let submissions = []; // Store submissions globally
 let quizzes = []; // Store quizzes globally
+let courses = []; // Store courses globally
 let currentSubmission = null; // Store current submission being viewed/graded
 let currentQuizId = null; // Store current quiz being edited
+let currentCourseId = null; // Store current course being managed
 let questionIdCounter = 1; // For generating unique question IDs
+let currentQuestionType = null;
 
 // Auth state observer
 onAuthStateChanged(auth, async (user) => {
+    console.log('Auth state changed:', user ? 'User logged in' : 'No user');
     currentUser = user;
     if (user) {
         // Check if user is admin
         const userDoc = await getDoc(doc(db, 'users', user.uid));
+        console.log('User doc exists:', userDoc.exists());
+        console.log('User is admin:', userDoc.exists() && userDoc.data().isAdmin);
+        
         if (userDoc.exists() && userDoc.data().isAdmin) {
             document.getElementById('authModal').classList.add('hidden');
             document.getElementById('mainApp').classList.remove('hidden');
-            loadDashboardData();
-            loadQuizzes();
+            
+            // Load all data
+            await loadCourses(); // Load courses first
+            await loadDashboardData();
+            await loadQuizzes();
         } else {
+            console.log('User is not an admin');
             alert('You do not have admin access.');
             signOut(auth);
         }
     } else {
+        console.log('No user, showing auth modal');
         document.getElementById('authModal').classList.remove('hidden');
         document.getElementById('mainApp').classList.add('hidden');
     }
@@ -61,39 +73,356 @@ onAuthStateChanged(auth, async (user) => {
 
 // Tab switching functionality
 window.switchTab = function(tabName) {
+    console.log('Switching to tab:', tabName);
+    
     // Show/hide sections
+    const sections = {
+        submissions: document.getElementById('submissionsSection'),
+        quizzes: document.getElementById('quizzesSection'),
+        courses: document.getElementById('coursesSection')
+    };
+    
+    // Update visibility
+    Object.entries(sections).forEach(([name, section]) => {
+        if (section) {
+            section.style.display = name === tabName ? 'block' : 'none';
+        }
+    });
+    
+    // Update button styles
+    const buttons = document.querySelectorAll('.flex.space-x-4.mb-6 button');
+    buttons.forEach(button => {
+        if (button.textContent.toLowerCase().includes(tabName)) {
+            button.classList.remove('bg-gray-200', 'text-gray-700');
+            button.classList.add('bg-blue-600', 'text-white');
+        } else {
+            button.classList.remove('bg-blue-600', 'text-white');
+            button.classList.add('bg-gray-200', 'text-gray-700');
+        }
+    });
+    
+    // Load data for the selected tab
     if (tabName === 'submissions') {
-        document.getElementById('submissionsSection').style.display = 'block';
-        document.getElementById('quizzesSection').style.display = 'none';
         loadDashboardData();
     } else if (tabName === 'quizzes') {
-        document.getElementById('submissionsSection').style.display = 'none';
-        document.getElementById('quizzesSection').style.display = 'block';
         loadQuizzes();
+    } else if (tabName === 'courses') {
+        loadCourses();
     }
 };
+
+// Load courses from Firestore
+async function loadCourses() {
+    try {
+        console.log('Loading courses...');
+        const coursesRef = collection(db, 'courses');
+        const q = query(coursesRef, orderBy('createdAt', 'desc'));
+        const querySnapshot = await getDocs(q);
+        
+        courses = [];
+        querySnapshot.forEach((doc) => {
+            const course = {
+                id: doc.id,
+                ...doc.data()
+            };
+            courses.push(course);
+        });
+        
+        console.log('Loaded courses:', courses.length);
+        updateCoursesUI();
+    } catch (error) {
+        console.error('Error loading courses:', error);
+        alert('Error loading courses. Please try again.');
+    }
+}
+
+function updateCoursesUI() {
+    const coursesList = document.getElementById('coursesList');
+    if (!coursesList) return;
+    
+    coursesList.innerHTML = courses.map(course => `
+        <div class="course-item p-4 border border-gray-200 rounded-lg mb-4">
+            <div class="flex justify-between items-center">
+                <div>
+                    <h3 class="text-lg font-semibold">${course.name}</h3>
+                    <p class="text-sm text-gray-600">${course.description}</p>
+                    <p class="text-xs text-gray-500">Created: ${course.createdAt?.toDate().toLocaleDateString()}</p>
+                </div>
+                <div class="flex space-x-2">
+                    <button onclick="editCourse('${course.id}')" class="button button-secondary">Edit</button>
+                    <button onclick="toggleCourseStatus('${course.id}', ${!course.isActive})" 
+                            class="button ${course.isActive ? 'button-danger' : 'button-success'}">
+                        ${course.isActive ? 'Deactivate' : 'Activate'}
+                    </button>
+                    <button onclick="deleteCourse('${course.id}')" 
+                            class="button button-danger">
+                        Delete
+                    </button>
+                </div>
+            </div>
+        </div>
+    `).join('');
+}
+
+// Course management functions
+window.createNewCourse = function() {
+    console.log('Creating new course...');
+    currentCourseId = null;
+    showCourseBuilder();
+};
+
+window.editCourse = function(courseId) {
+    console.log('Editing course:', courseId);
+    const course = courses.find(c => c.id === courseId);
+    if (!course) {
+        alert('Course not found');
+        return;
+    }
+    
+    currentCourseId = courseId;
+    showCourseBuilder(course);
+};
+
+window.toggleCourseStatus = async function(courseId, newStatus) {
+    try {
+        await updateDoc(doc(db, 'courses', courseId), {
+            isActive: newStatus
+        });
+        alert(`Course ${newStatus ? 'activated' : 'deactivated'} successfully!`);
+        loadCourses();
+    } catch (error) {
+        console.error('Error updating course status:', error);
+        alert('Error updating course status. Please try again.');
+    }
+};
+
+window.deleteCourse = async function(courseId) {
+    const course = courses.find(c => c.id === courseId);
+    if (!course) {
+        alert('Course not found');
+        return;
+    }
+    
+    if (confirm(`Are you sure you want to delete "${course.name}"? This will also delete all quizzes associated with this course. This action cannot be undone.`)) {
+        try {
+            // First, delete all quizzes associated with this course
+            const quizzesRef = collection(db, 'quizzes');
+            const q = query(quizzesRef, where('courseId', '==', courseId));
+            const querySnapshot = await getDocs(q);
+            
+            // Delete each quiz
+            const deletePromises = querySnapshot.docs.map(doc => deleteDoc(doc.ref));
+            await Promise.all(deletePromises);
+            
+            // Then delete the course
+            await deleteDoc(doc(db, 'courses', courseId));
+            
+            alert('Course and associated quizzes deleted successfully!');
+            loadCourses(); // Reload the courses list
+        } catch (error) {
+            console.error('Error deleting course:', error);
+            alert('Error deleting course. Please try again.');
+        }
+    }
+};
+
+function showCourseBuilder(course = null) {
+    console.log('=== showCourseBuilder called ===');
+    console.log('Course data:', course);
+    
+    // Get or create modal
+    let modal = document.getElementById('courseBuilderModal');
+    if (!modal) {
+        console.log('Creating course builder modal...');
+        modal = document.createElement('div');
+        modal.id = 'courseBuilderModal';
+        modal.className = 'fixed inset-0 bg-black bg-opacity-50 z-50 hidden';
+        modal.innerHTML = `
+            <div class="fixed inset-0 flex items-center justify-center p-4">
+                <div class="bg-white rounded-lg shadow-xl w-full max-w-2xl">
+                    <!-- Header -->
+                    <div class="p-6 border-b">
+                        <div class="flex justify-between items-center">
+                            <h3 id="courseBuilderTitle" class="text-xl font-bold text-gray-900">${course ? 'Edit Course' : 'Create New Course'}</h3>
+                            <button onclick="closeCourseBuilder()" class="text-gray-500 hover:text-gray-700">
+                                <svg class="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                                </svg>
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <!-- Content -->
+                    <div class="p-6">
+                        <form id="courseForm" class="space-y-4">
+                            <div>
+                                <label for="courseName" class="block text-sm font-medium text-gray-700">Course Title</label>
+                                <input type="text" id="courseName" name="courseName" required
+                                    class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary focus:ring-primary"
+                                    value="${course ? course.name : ''}">
+                            </div>
+                            <div>
+                                <label for="courseDescription" class="block text-sm font-medium text-gray-700">Description</label>
+                                <textarea id="courseDescription" name="courseDescription" rows="3"
+                                    class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary focus:ring-primary">${course ? course.description : ''}</textarea>
+                            </div>
+                            <div class="flex justify-end space-x-2">
+                                <button type="button" onclick="closeCourseBuilder()" class="button button-secondary">Cancel</button>
+                                <button type="submit" class="button button-primary">Save Course</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(modal);
+    } else {
+        // Update existing modal content
+        const title = modal.querySelector('#courseBuilderTitle');
+        const nameInput = modal.querySelector('#courseName');
+        const descriptionInput = modal.querySelector('#courseDescription');
+        
+        if (title) title.textContent = course ? 'Edit Course' : 'Create New Course';
+        if (nameInput) nameInput.value = course ? course.name : '';
+        if (descriptionInput) descriptionInput.value = course ? course.description : '';
+    }
+
+    // Show modal
+    modal.classList.remove('hidden');
+
+    // Add form submit handler
+    const form = document.getElementById('courseForm');
+    if (form) {
+        form.addEventListener('submit', handleCourseSave);
+    } else {
+        console.error('Course form not found after modal creation');
+    }
+}
+
+window.closeCourseBuilder = function() {
+    const modal = document.getElementById('courseBuilderModal');
+    if (!modal) {
+        console.error('Course builder modal not found');
+        return;
+    }
+    modal.classList.add('hidden');
+    document.getElementById('courseForm').reset();
+    currentCourseId = null;
+};
+
+async function handleCourseSave(e) {
+    e.preventDefault();
+    console.log('Handling course save...');
+    
+    const formData = new FormData(e.target);
+    const courseData = {
+        name: formData.get('courseName'),
+        description: formData.get('courseDescription'),
+        isActive: true,
+        updatedAt: serverTimestamp()
+    };
+    
+    console.log('Course data to save:', courseData);
+    
+    try {
+        if (currentCourseId) {
+            // Update existing course
+            await updateDoc(doc(db, 'courses', currentCourseId), courseData);
+            alert('Course updated successfully!');
+        } else {
+            // Create new course
+            courseData.createdAt = serverTimestamp();
+            const docRef = await addDoc(collection(db, 'courses'), courseData);
+            console.log('New course created with ID:', docRef.id);
+            alert('Course created successfully!');
+        }
+        
+        closeCourseBuilder();
+        await loadCourses(); // Reload courses to update the list
+    } catch (error) {
+        console.error('Error saving course:', error);
+        alert('Error saving course. Please try again.');
+    }
+}
 
 // Load quizzes from Firestore
 async function loadQuizzes() {
     try {
-        console.log('Loading quizzes...');
-        const quizzesRef = collection(db, 'quizzes');
-        const q = query(quizzesRef, orderBy('chapterNumber'));
-        const querySnapshot = await getDocs(q);
+        console.log('=== loadQuizzes called ===');
+        console.log('Current db instance:', db);
         
-        quizzes = [];
+        const quizzesRef = collection(db, 'quizzes');
+        console.log('Quizzes collection reference created');
+        
+        const q = query(quizzesRef, orderBy('chapterNumber'));
+        console.log('Query created with orderBy chapterNumber');
+        
+        console.log('Executing query...');
+        const querySnapshot = await getDocs(q);
+        console.log('Query executed, received snapshot with', querySnapshot.size, 'documents');
+        
+        quizzes = []; // Reset quizzes array
+        const uniqueChapters = new Set();
+        const uniqueCourses = new Set();
+        
         querySnapshot.forEach((doc) => {
+            console.log('Processing quiz document:', doc.id);
             const quiz = {
                 id: doc.id,
                 ...doc.data()
             };
+            console.log('Quiz data:', quiz);
             quizzes.push(quiz);
+            uniqueChapters.add(quiz.chapterNumber);
+            if (quiz.courseName) {
+                uniqueCourses.add(quiz.courseName);
+            }
         });
         
-        console.log('Loaded quizzes:', quizzes.length);
+        console.log('Loaded quizzes:', {
+            total: quizzes.length,
+            uniqueChapters: Array.from(uniqueChapters),
+            uniqueCourses: Array.from(uniqueCourses)
+        });
+        
+        // Update chapter filter options
+        const chapterFilter = document.getElementById('chapterFilter');
+        if (chapterFilter) {
+            console.log('Updating chapter filter options');
+            const options = Array.from(uniqueChapters)
+                .sort((a, b) => a - b)
+                .map(chapter => `<option value="${chapter}">Chapter ${chapter}</option>`);
+            chapterFilter.innerHTML = `
+                <option value="">All Chapters</option>
+                ${options.join('')}
+            `;
+        } else {
+            console.warn('Chapter filter element not found');
+        }
+        
+        // Update course filter options
+        const courseFilter = document.getElementById('quizCourseFilter');
+        if (courseFilter) {
+            console.log('Updating course filter options');
+            const options = Array.from(uniqueCourses).map(course => 
+                `<option value="${course}">${course}</option>`
+            );
+            courseFilter.innerHTML = `
+                <option value="">All Courses</option>
+                ${options.join('')}
+            `;
+        } else {
+            console.warn('Course filter element not found');
+        }
+        
         updateQuizzesUI();
     } catch (error) {
         console.error('Error loading quizzes:', error);
+        console.error('Error details:', {
+            name: error.name,
+            message: error.message,
+            stack: error.stack
+        });
         alert('Error loading quizzes. Please try again.');
     }
 }
@@ -102,60 +431,99 @@ function updateQuizzesUI() {
     const quizzesList = document.getElementById('quizzesList');
     if (!quizzesList) return;
     
+    // Get filter values
+    const chapterFilter = document.getElementById('chapterFilter')?.value || '';
+    const courseFilter = document.getElementById('quizCourseFilter')?.value || '';
+    
+    console.log('Filtering quizzes with:', { chapterFilter, courseFilter });
+    
+    // Filter quizzes
+    const filteredQuizzes = quizzes.filter(quiz => {
+        const matchesChapter = !chapterFilter || quiz.chapterNumber.toString() === chapterFilter;
+        const matchesCourse = !courseFilter || quiz.courseName === courseFilter;
+        return matchesChapter && matchesCourse;
+    });
+    
     quizzesList.innerHTML = '';
     
-    if (quizzes.length === 0) {
+    if (filteredQuizzes.length === 0) {
         quizzesList.innerHTML = `
             <div class="text-center py-8 text-gray-500">
-                <p>No quizzes found. Create your first quiz to get started.</p>
+                <p>No quizzes found matching the current filters.</p>
+                <p class="mt-2 text-sm">Total quizzes: ${quizzes.length}</p>
             </div>
         `;
         return;
     }
     
-    quizzes.forEach(quiz => {
-        const row = document.createElement('div');
-        row.className = 'p-4 border border-gray-200 rounded-lg hover:bg-gray-50';
-        
-        row.innerHTML = `
-            <div class="flex justify-between items-center">
-                <div class="flex-1">
-                    <h4 class="text-lg font-semibold">Chapter ${quiz.chapterNumber}</h4>
-                    <p class="text-gray-700">${quiz.title}</p>
-                    <p class="text-sm text-gray-600">${quiz.questions?.length || 0} questions</p>
-                </div>
-                <div class="flex space-x-2">
-                    <button onclick="editQuiz('${quiz.id}')" class="button button-secondary">Edit</button>
-                    <button onclick="deleteQuiz('${quiz.id}')" class="button button-danger">Delete</button>
-                </div>
+    // Group quizzes by course
+    const quizzesByCourse = filteredQuizzes.reduce((acc, quiz) => {
+        const courseName = quiz.courseName || 'Unassigned Course';
+        if (!acc[courseName]) {
+            acc[courseName] = [];
+        }
+        acc[courseName].push(quiz);
+        return acc;
+    }, {});
+    
+    // Render quizzes grouped by course
+    Object.entries(quizzesByCourse).forEach(([courseName, courseQuizzes]) => {
+        const courseSection = document.createElement('div');
+        courseSection.className = 'mb-8';
+        courseSection.innerHTML = `
+            <h3 class="text-xl font-semibold mb-4">${courseName}</h3>
+            <div class="space-y-4">
+                ${courseQuizzes.map(quiz => `
+                    <div class="p-4 border border-gray-200 rounded-lg hover:bg-gray-50">
+                        <div class="flex justify-between items-center">
+                            <div class="flex-1">
+                                <h4 class="text-lg font-semibold">Chapter ${quiz.chapterNumber}</h4>
+                                <p class="text-gray-700">${quiz.title}</p>
+                                <p class="text-sm text-gray-600">${quiz.questions?.length || 0} questions</p>
+                            </div>
+                            <div class="flex space-x-2">
+                                <button onclick="editQuiz('${quiz.id}')" class="button button-secondary">Edit</button>
+                                <button onclick="deleteQuiz('${quiz.id}')" class="button button-danger">Delete</button>
+                            </div>
+                        </div>
+                    </div>
+                `).join('')}
             </div>
         `;
-        
-        quizzesList.appendChild(row);
+        quizzesList.appendChild(courseSection);
     });
 }
 
 // Quiz management functions
-window.createNewQuiz = function() {
-    console.log('createNewQuiz called');
+window.createNewQuiz = async function() {
+    console.log('=== createNewQuiz called ===');
+    console.log('Current courses:', courses);
+    console.log('Current quizzes:', quizzes);
+    
     currentQuizId = null;
     questionIdCounter = 1;
     
-    const titleElement = document.getElementById('quizBuilderTitle');
-    if (titleElement) {
-        titleElement.textContent = 'Create New Quiz';
-    } else {
-        console.error('Quiz builder title element not found');
+    // Ensure courses are loaded
+    if (courses.length === 0) {
+        console.log('No courses found, loading courses...');
+        await loadCourses();
+        console.log('Courses loaded:', courses);
     }
     
+    console.log('Calling showQuizBuilder...');
     showQuizBuilder();
 };
 
-window.editQuiz = function(quizId) {
+window.editQuiz = async function(quizId) {
     const quiz = quizzes.find(q => q.id === quizId);
     if (!quiz) {
         alert('Quiz not found');
         return;
+    }
+    
+    // Ensure courses are loaded
+    if (courses.length === 0) {
+        await loadCourses();
     }
     
     currentQuizId = quizId;
@@ -187,94 +555,251 @@ async function deleteQuizFromFirestore(quizId) {
 }
 
 function showQuizBuilder(quiz = null) {
-    console.log('showQuizBuilder called');
-    const modal = document.getElementById('quizBuilderModal');
-    const content = document.getElementById('quizBuilderContent');
+    console.log('=== showQuizBuilder called ===');
+    console.log('Quiz parameter:', quiz);
     
-    if (!modal || !content) {
-        console.error('Modal elements not found:', { modal, content });
+    // Get modal element
+    const modal = document.getElementById('quizBuilderModal');
+    if (!modal) {
+        console.error('Modal element not found');
         return;
     }
     
-    console.log('Modal elements found, setting up content');
-    const isEditing = quiz !== null;
+    // Get content container
+    const contentContainer = modal.querySelector('#quizBuilderContent');
+    if (!contentContainer) {
+        console.error('Content container not found');
+        return;
+    }
     
-    // Set up the form content
-    content.innerHTML = `
-        <form id="quizBuilderForm" class="space-y-6">
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                    <label class="block text-sm font-medium text-gray-700 mb-2">Chapter Number</label>
-                    <input type="number" 
-                           name="chapterNumber" 
-                           min="1" 
-                           value="${quiz?.chapterNumber || ''}"
-                           class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
-                           required>
-                </div>
-                <div>
-                    <label class="block text-sm font-medium text-gray-700 mb-2">Quiz Title</label>
-                    <input type="text" 
-                           name="quizTitle" 
-                           value="${quiz?.title || ''}"
-                           class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
-                           placeholder="e.g., Chapter 1: First Impressions Core Concepts"
-                           required>
-                </div>
-            </div>
-            
+    // Create form HTML
+    const formHTML = `
+        <form id="quizForm" class="space-y-4">
             <div>
-                <div class="flex justify-between items-center mb-4">
-                    <h3 class="text-lg font-semibold">Questions</h3>
-                    <div class="space-x-2">
-                        <select id="questionTypeSelect" class="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary">
-                            <option value="multiple-choice">Multiple Choice</option>
-                            <option value="fill-blank">Fill in the Blank</option>
-                            <option value="fill-blank-double">Fill in the Blank (Two Answers)</option>
-                            <option value="true-false">True/False</option>
-                            <option value="short-answer">Short Answer</option>
-                            <option value="long-answer">Long Answer</option>
-                            <option value="profile-strategy">Profile & Strategy</option>
-                        </select>
-                        <button type="button" onclick="window.addQuestion()" class="button button-primary">Add Question</button>
-                    </div>
-                </div>
-
-                <div id="questionsContainer" class="space-y-4">
-                    <!-- Questions will be added here -->
-                </div>
+                <label for="quizTitle" class="block text-sm font-medium text-gray-700">Quiz Title</label>
+                <input type="text" id="quizTitle" name="title" required
+                    class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary focus:ring-primary"
+                    value="${quiz ? quiz.title : ''}">
             </div>
-            
-            <div class="flex justify-end space-x-4 pt-4 border-t">
-                <button type="button" onclick="window.closeQuizBuilder()" class="button button-secondary">Cancel</button>
-                <button type="submit" class="button button-primary">${isEditing ? 'Update Quiz' : 'Create Quiz'}</button>
+            <div>
+                <label for="courseId" class="block text-sm font-medium text-gray-700">Course</label>
+                <select id="courseId" name="courseId" required
+                    class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary focus:ring-primary">
+                    <option value="">Select a course</option>
+                </select>
+            </div>
+            <div>
+                <label for="chapterNumber" class="block text-sm font-medium text-gray-700">Chapter Number</label>
+                <input type="number" id="chapterNumber" name="chapterNumber" min="1" required
+                    class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary focus:ring-primary"
+                    value="${quiz ? quiz.chapterNumber : ''}">
+            </div>
+            <div>
+                <label for="quizDescription" class="block text-sm font-medium text-gray-700">Description</label>
+                <textarea id="quizDescription" name="description" rows="3"
+                    class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary focus:ring-primary">${quiz ? quiz.description : ''}</textarea>
+            </div>
+            <div id="questionsContainer" class="space-y-4">
+                <!-- Questions will be added here -->
+            </div>
+            <div class="flex justify-between items-center">
+                <button type="button" onclick="showQuestionTypeModal()" class="button button-secondary">
+                    Add Question
+                </button>
+                <div class="flex space-x-2">
+                    <button type="button" onclick="closeQuizBuilder()" class="button button-secondary">Cancel</button>
+                    <button type="submit" class="button button-primary">Save Quiz</button>
+                </div>
             </div>
         </form>
     `;
     
-    // Load existing questions if editing
-    if (quiz && quiz.questions) {
-        quiz.questions.forEach(question => {
-            window.addQuestion(question);
+    // Set content
+    contentContainer.innerHTML = formHTML;
+    
+    // Show modal
+    modal.classList.remove('hidden');
+    
+    // Get elements after they're created
+    const form = document.getElementById('quizForm');
+    const courseSelect = document.getElementById('courseId');
+    const questionsContainer = document.getElementById('questionsContainer');
+    
+    if (!form || !courseSelect || !questionsContainer) {
+        console.error('Failed to create form elements');
+        modal.classList.add('hidden');
+        return;
+    }
+    
+    // Set title
+    const title = document.getElementById('quizBuilderTitle');
+    if (title) {
+        title.textContent = quiz ? 'Edit Quiz' : 'Create New Quiz';
+    }
+    
+    // Clear existing options
+    courseSelect.innerHTML = '<option value="">Select a course</option>';
+    
+    // Add "Create New Course" option
+    const createCourseOption = document.createElement('option');
+    createCourseOption.value = 'new';
+    createCourseOption.textContent = '➕ Create New Course';
+    courseSelect.appendChild(createCourseOption);
+    
+    // Add existing courses
+    if (courses && courses.length > 0) {
+        courses.forEach(course => {
+            const option = document.createElement('option');
+            option.value = course.id;
+            option.textContent = course.name;
+            if (quiz && quiz.courseId === course.id) {
+                option.selected = true;
+            }
+            courseSelect.appendChild(option);
         });
     }
     
-    // Handle form submission
-    const form = document.getElementById('quizBuilderForm');
-    if (form) {
-        form.addEventListener('submit', handleQuizSave);
+    // Add event listener for course selection
+    courseSelect.addEventListener('change', function(e) {
+        if (e.target.value === 'new') {
+            showCourseBuilder();
+            courseSelect.value = '';
+        }
+    });
+    
+    // Clear questions container
+    questionsContainer.innerHTML = '';
+    
+    // Set form values if editing
+    if (quiz) {
+        form.querySelector('#quizTitle').value = quiz.title;
+        form.querySelector('#quizDescription').value = quiz.description || '';
+        form.querySelector('#chapterNumber').value = quiz.chapterNumber || '';
+        
+        // Add existing questions
+        if (quiz.questions && quiz.questions.length > 0) {
+            quiz.questions.forEach(question => {
+                addQuestion(question);
+            });
+        }
     } else {
-        console.error('Quiz builder form not found');
+        form.reset();
     }
     
-    // Show the modal
+    // Add form submit handler
+    form.addEventListener('submit', handleQuizSave);
+    
+    console.log('Quiz builder setup complete');
+}
+
+// Make closeQuizBuilder available globally
+window.closeQuizBuilder = function() {
+    const modal = document.getElementById('quizBuilderModal');
+    if (!modal) {
+        console.error('Quiz builder modal not found');
+        return;
+    }
+    modal.classList.add('hidden');
+    document.getElementById('quizForm').reset();
+    document.getElementById('questionsContainer').innerHTML = '';
+};
+
+window.showQuestionTypeModal = function() {
+    console.log('=== showQuestionTypeModal called ===');
+    
+    // Get or create modal
+    let modal = document.getElementById('questionTypeModal');
+    if (!modal) {
+        console.log('Creating question type modal...');
+        modal = document.createElement('div');
+        modal.id = 'questionTypeModal';
+        modal.className = 'fixed inset-0 bg-black bg-opacity-50 z-50 hidden';
+        modal.innerHTML = `
+            <div class="fixed inset-0 flex items-center justify-center p-4">
+                <div class="bg-white rounded-lg shadow-xl w-full max-w-4xl">
+                    <!-- Header -->
+                    <div class="p-6 border-b">
+                        <div class="flex justify-between items-center">
+                            <h3 class="text-xl font-bold text-gray-900">Select Question Type</h3>
+                            <button onclick="closeQuestionTypeModal()" class="text-gray-500 hover:text-gray-700">
+                                <svg class="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                                </svg>
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <!-- Content -->
+                    <div class="p-6">
+                        <div class="grid grid-cols-2 gap-4">
+                            <button onclick="selectQuestionType('multiple-choice')" class="p-4 border rounded-lg hover:bg-gray-50">
+                                <h3 class="font-semibold">Multiple Choice</h3>
+                                <p class="text-sm text-gray-600">Single correct answer from multiple options</p>
+                            </button>
+                            <button onclick="selectQuestionType('fill-blank')" class="p-4 border rounded-lg hover:bg-gray-50">
+                                <h3 class="font-semibold">Fill in the Blank</h3>
+                                <p class="text-sm text-gray-600">Single word or phrase answer</p>
+                            </button>
+                            <button onclick="selectQuestionType('fill-blank-double')" class="p-4 border rounded-lg hover:bg-gray-50">
+                                <h3 class="font-semibold">Double Fill in the Blank</h3>
+                                <p class="text-sm text-gray-600">Two related answers</p>
+                            </button>
+                            <button onclick="selectQuestionType('true-false')" class="p-4 border rounded-lg hover:bg-gray-50">
+                                <h3 class="font-semibold">True/False</h3>
+                                <p class="text-sm text-gray-600">Binary choice question</p>
+                            </button>
+                            <button onclick="selectQuestionType('short-answer')" class="p-4 border rounded-lg hover:bg-gray-50">
+                                <h3 class="font-semibold">Short Answer</h3>
+                                <p class="text-sm text-gray-600">Brief written response</p>
+                            </button>
+                            <button onclick="selectQuestionType('long-answer')" class="p-4 border rounded-lg hover:bg-gray-50">
+                                <h3 class="font-semibold">Long Answer</h3>
+                                <p class="text-sm text-gray-600">Detailed written response</p>
+                            </button>
+                            <button onclick="selectQuestionType('profile-strategy')" class="p-4 border rounded-lg hover:bg-gray-50">
+                                <h3 class="font-semibold">Profile & Strategy</h3>
+                                <p class="text-sm text-gray-600">Match profiles with strategies</p>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(modal);
+    }
+
+    // Show modal
     modal.classList.remove('hidden');
-    console.log('Modal display classes:', modal.className);
+}
+
+window.closeQuestionTypeModal = function() {
+    const modal = document.getElementById('questionTypeModal');
+    if (!modal) {
+        console.error('Question type modal not found');
+        return;
+    }
+    modal.classList.add('hidden');
+}
+
+window.selectQuestionType = function(type) {
+    console.log('=== selectQuestionType called ===');
+    console.log('Selected type:', type);
+    currentQuestionType = type;
+    closeQuestionTypeModal();
+    addQuestion();
 }
 
 window.addQuestion = function(existingQuestion = null) {
+    console.log('=== addQuestion called ===');
+    console.log('Question type:', existingQuestion?.type || currentQuestionType);
+    
     const container = document.getElementById('questionsContainer');
-    const questionType = existingQuestion?.type || document.getElementById('questionTypeSelect').value;
+    if (!container) {
+        console.error('Questions container not found');
+        return;
+    }
+
+    const questionType = existingQuestion?.type || currentQuestionType || 'multiple-choice';
     const questionId = existingQuestion?.id || questionIdCounter++;
     
     const questionDiv = document.createElement('div');
@@ -487,10 +1012,15 @@ window.addQuestion = function(existingQuestion = null) {
     
     questionDiv.innerHTML = questionHTML;
     container.appendChild(questionDiv);
+    console.log('Question added successfully');
 };
 
 window.removeQuestion = function(button) {
-    button.closest('.question-builder').remove();
+    const questionDiv = button.closest('.question-builder');
+    if (questionDiv) {
+        questionDiv.remove();
+        updateQuestionNumbers();
+    }
 };
 
 function updateQuestionNumbers() {
@@ -508,8 +1038,23 @@ async function handleQuizSave(e) {
     e.preventDefault();
     
     const formData = new FormData(e.target);
+    const courseId = formData.get('courseId');
     const chapterNumber = parseInt(formData.get('chapterNumber'));
-    const title = formData.get('quizTitle');
+    const title = formData.get('title');
+    
+    console.log('Saving quiz with data:', {
+        courseId,
+        chapterNumber,
+        title,
+        formData: Object.fromEntries(formData)
+    });
+    
+    // Get course name
+    const course = courses.find(c => c.id === courseId);
+    if (!course) {
+        alert('Please select a valid course');
+        return;
+    }
     
     // Collect questions
     const questions = [];
@@ -575,11 +1120,16 @@ async function handleQuizSave(e) {
     });
     
     const quizData = {
+        courseId: courseId,
+        courseName: course.name,
         chapterNumber: chapterNumber,
         title: title,
+        description: formData.get('description'),
         questions: questions,
         updatedAt: serverTimestamp()
     };
+    
+    console.log('Final quiz data to save:', quizData);
     
     try {
         if (currentQuizId) {
@@ -601,17 +1151,12 @@ async function handleQuizSave(e) {
     }
 }
 
-window.closeQuizBuilder = function() {
-    document.getElementById('quizBuilderModal').classList.add('hidden');
-    currentQuizId = null;
-};
-
 // Load dashboard data
 async function loadDashboardData() {
     try {
         console.log('Loading dashboard data...');
         const submissionsRef = collection(db, 'quiz_submissions');
-        const q = query(submissionsRef);
+        const q = query(submissionsRef, orderBy('submittedAt', 'desc'));
         const querySnapshot = await getDocs(q);
         
         console.log('Received snapshot with', querySnapshot.size, 'documents');
@@ -619,62 +1164,81 @@ async function loadDashboardData() {
         submissions = []; // Reset submissions array
         let pendingCount = 0;
         let gradedCount = 0;
+        const uniqueCourses = new Set(); // Track unique courses
         const uniqueChapters = new Set(); // Track unique chapters
         
         querySnapshot.forEach((doc) => {
-            console.log('Processing submission:', doc.data());
             const submission = {
                 id: doc.id,
                 ...doc.data()
             };
+            console.log('Processing submission:', {
+                id: submission.id,
+                status: submission.status,
+                email: submission.userEmail,
+                course: submission.courseName,
+                chapter: submission.chapterNumber
+            });
             submissions.push(submission);
             
+            // Add course to unique courses set
+            if (submission.courseName) {
+                uniqueCourses.add(submission.courseName);
+            }
+            
             // Add chapter to unique chapters set
-            if (submission.chapterTitle) {
-                uniqueChapters.add(submission.chapterTitle);
+            if (submission.chapterNumber) {
+                uniqueChapters.add(submission.chapterNumber);
             }
             
             if (submission.status === 'pending_review') {
                 pendingCount++;
-            } else {
+            } else if (submission.status === 'graded') {
                 gradedCount++;
             }
         });
         
+        console.log('Submission counts:', { 
+            total: submissions.length, 
+            pending: pendingCount, 
+            graded: gradedCount,
+            courses: Array.from(uniqueCourses),
+            chapters: Array.from(uniqueChapters)
+        });
+        
+        // Update course filter options
+        const courseFilter = document.getElementById('courseFilter');
+        if (courseFilter) {
+            const options = Array.from(uniqueCourses).map(course => 
+                `<option value="${course}">${course}</option>`
+            );
+            courseFilter.innerHTML = `
+                <option value="">All Courses</option>
+                ${options.join('')}
+            `;
+        }
+        
         // Update chapter filter options
         const chapterFilter = document.getElementById('chapterFilter');
         if (chapterFilter) {
-            // Keep the "All Chapters" option
-            chapterFilter.innerHTML = '<option value="all">All Chapters</option>';
-            
-            // Add unique chapters sorted by chapter number
-            Array.from(uniqueChapters)
-                .sort((a, b) => {
-                    // Extract chapter numbers and compare
-                    const numA = parseInt(a.match(/Chapter (\d+)/)?.[1] || '0');
-                    const numB = parseInt(b.match(/Chapter (\d+)/)?.[1] || '0');
-                    return numA - numB;
-                })
-                .forEach(chapter => {
-                    const option = document.createElement('option');
-                    option.value = chapter;
-                    option.textContent = chapter;
-                    chapterFilter.appendChild(option);
-                });
+            const options = Array.from(uniqueChapters)
+                .sort((a, b) => a - b)
+                .map(chapter => `<option value="${chapter}">Chapter ${chapter}</option>`);
+            chapterFilter.innerHTML = `
+                <option value="">All Chapters</option>
+                ${options.join('')}
+            `;
         }
         
-        console.log('Total submissions found:', submissions.length);
-        console.log('Submissions with pending review:', pendingCount);
-        console.log('Graded submissions:', gradedCount);
-        
-        updateDashboardUI();
+        updateSubmissionsUI();
     } catch (error) {
         console.error('Error loading dashboard data:', error);
         alert('Error loading dashboard data. Please try again.');
     }
 }
 
-function updateDashboardUI() {
+function updateSubmissionsUI() {
+    console.log('updateSubmissionsUI called');
     const submissionsList = document.getElementById('submissionsList');
     if (!submissionsList) {
         console.error('Submissions list element not found');
@@ -686,9 +1250,18 @@ function updateDashboardUI() {
     // Get filter values
     const searchEmail = document.getElementById('searchEmail')?.value.toLowerCase() || '';
     const viewFilter = document.getElementById('viewFilter')?.value || 'pending';
-    const chapterFilter = document.getElementById('chapterFilter')?.value || 'all';
+    const courseFilter = document.getElementById('courseFilter')?.value || '';
+    const chapterFilter = document.getElementById('chapterFilter')?.value || '';
     
-    console.log('Filtering with:', { searchEmail, viewFilter, chapterFilter });
+    console.log('Filtering with:', { 
+        searchEmail, 
+        viewFilter, 
+        courseFilter, 
+        chapterFilter,
+        chapterFilterType: typeof chapterFilter,
+        chapterFilterValue: chapterFilter
+    });
+    console.log('Total submissions before filtering:', submissions.length);
     
     // Filter submissions
     const filteredSubmissions = submissions.filter(submission => {
@@ -696,26 +1269,63 @@ function updateDashboardUI() {
         const matchesView = viewFilter === 'pending' ? 
             submission.status === 'pending_review' : 
             submission.status === 'graded';
-        const matchesChapter = chapterFilter === 'all' || submission.chapterTitle === chapterFilter;
+        const matchesCourse = !courseFilter || submission.courseName === courseFilter;
         
-        console.log('Submission:', {
+        // Convert both to numbers for comparison
+        const submissionChapter = Number(submission.chapterNumber);
+        const filterChapter = Number(chapterFilter);
+        const matchesChapter = !chapterFilter || submissionChapter === filterChapter;
+        
+        console.log('Checking submission:', {
+            id: submission.id,
             email: submission.userEmail,
             status: submission.status,
-            chapter: submission.chapterTitle,
-            matches: { matchesEmail, matchesView, matchesChapter }
+            course: submission.courseName,
+            chapter: submissionChapter,
+            filterChapter: filterChapter,
+            matches: { 
+                matchesEmail, 
+                matchesView, 
+                matchesCourse, 
+                matchesChapter,
+                chapterMatch: submissionChapter === filterChapter
+            }
         });
         
-        return matchesEmail && matchesView && matchesChapter;
+        return matchesEmail && matchesView && matchesCourse && matchesChapter;
     });
     
     console.log('Filtered submissions:', filteredSubmissions.length);
     
     // Update stats
-    document.getElementById('totalSubmissions').textContent = submissions.length;
-    document.getElementById('pendingSubmissions').textContent = submissions.filter(s => s.status === 'pending_review').length;
-    document.getElementById('gradedSubmissions').textContent = submissions.filter(s => s.status === 'graded').length;
+    const totalSubmissions = submissions.length;
+    const pendingSubmissions = submissions.filter(s => s.status === 'pending_review').length;
+    const gradedSubmissions = submissions.filter(s => s.status === 'graded').length;
+    
+    console.log('Stats:', { totalSubmissions, pendingSubmissions, gradedSubmissions });
+    
+    document.getElementById('totalSubmissions').textContent = totalSubmissions;
+    document.getElementById('pendingSubmissions').textContent = pendingSubmissions;
+    document.getElementById('gradedSubmissions').textContent = gradedSubmissions;
     
     // Render submissions
+    if (filteredSubmissions.length === 0) {
+        submissionsList.innerHTML = `
+            <div class="text-center py-8 text-gray-500">
+                <p>No submissions found matching the current filters.</p>
+                <p class="mt-2 text-sm">Total submissions: ${totalSubmissions}</p>
+                <p class="text-sm">Pending: ${pendingSubmissions}</p>
+                <p class="text-sm">Graded: ${gradedSubmissions}</p>
+                <p class="text-sm">Current filters:</p>
+                <p class="text-sm">- Status: ${viewFilter}</p>
+                <p class="text-sm">- Course: ${courseFilter || 'All'}</p>
+                <p class="text-sm">- Chapter: ${chapterFilter || 'All'}</p>
+                <p class="text-sm">- Email search: ${searchEmail || 'None'}</p>
+            </div>
+        `;
+        return;
+    }
+    
     filteredSubmissions.forEach(submission => {
         const row = document.createElement('div');
         row.className = 'p-4 border border-gray-200 rounded-lg hover:bg-gray-50';
@@ -726,15 +1336,17 @@ function updateDashboardUI() {
         row.innerHTML = `
             <div class="flex justify-between items-center">
                 <div class="flex-1">
-                    <h4 class="text-lg font-semibold">${submission.userName}</h4>
-                    <p class="text-sm text-gray-600">${submission.userEmail}</p>
+                    <h4 class="text-lg font-semibold">${submission.userName || 'Unknown User'}</h4>
+                    <p class="text-sm text-gray-600">${submission.userEmail || 'No Email'}</p>
                 </div>
                 <div class="flex-1">
-                    <p class="text-gray-700">${submission.chapterTitle}</p>
-                    <p class="text-sm text-gray-600">Score: ${submission.score}/${submission.maxScore}</p>
+                    <p class="text-gray-700">${submission.courseName || 'No Course'}</p>
+                    <p class="text-sm text-gray-600">Chapter ${submission.chapterNumber || 'N/A'}: ${submission.chapterTitle || 'No Title'}</p>
+                    <p class="text-sm text-gray-600">Score: ${submission.score}/${submission.maxScore || 0} (${submission.percentage || 0}%)</p>
                 </div>
                 <div class="flex-1">
                     <span class="${statusClass}">${statusText}</span>
+                    <p class="text-sm text-gray-500">${submission.submittedAt?.toDate().toLocaleString() || 'No date'}</p>
                 </div>
                 <div class="flex space-x-2">
                     <button onclick="viewSubmission('${submission.id}')" class="button button-secondary">View</button>
@@ -770,7 +1382,7 @@ window.viewSubmission = function(submissionId) {
             </div>
             <div>
                 <h3 class="text-lg font-semibold">Quiz Information</h3>
-                <p>Chapter: ${submission.chapterTitle}</p>
+                <p>Course: ${submission.courseName}</p>
                 <p>Score: ${submission.score}/${submission.maxScore}</p>
                 <p>Status: ${submission.status}</p>
             </div>
@@ -830,7 +1442,7 @@ window.gradeSubmission = function(submissionId) {
             </div>
             <div>
                 <h3 class="text-lg font-semibold">Quiz Information</h3>
-                <p>Chapter: ${submission.chapterTitle}</p>
+                <p>Course: ${submission.courseName}</p>
                 <p>Current Score: ${submission.score}/${submission.maxScore}</p>
             </div>
             <div>
@@ -935,7 +1547,7 @@ window.exportToPDF = function() {
     doc.setFontSize(12);
     doc.text(`Student: ${currentSubmission.userName}`, 20, 30);
     doc.text(`Email: ${currentSubmission.userEmail}`, 20, 40);
-    doc.text(`Chapter: ${currentSubmission.chapterTitle}`, 20, 50);
+    doc.text(`Course: ${currentSubmission.courseName}`, 20, 50);
     doc.text(`Score: ${currentSubmission.score}/${currentSubmission.maxScore}`, 20, 60);
     
     // Add questions and answers
@@ -996,7 +1608,7 @@ window.exportToPDF = function() {
     });
     
     // Save the PDF
-    doc.save(`quiz_submission_${currentSubmission.userName}_${currentSubmission.chapterTitle}.pdf`);
+    doc.save(`quiz_submission_${currentSubmission.userName}_${currentSubmission.courseName}.pdf`);
 };
 
 // Close modal
@@ -1008,12 +1620,17 @@ window.closeModal = function() {
 // Handle login form
 document.getElementById('authForm').addEventListener('submit', async (e) => {
     e.preventDefault();
+    console.log('Login form submitted');
+    
     const email = document.getElementById('email').value;
     const password = document.getElementById('password').value;
     
     try {
-        await signInWithEmailAndPassword(auth, email, password);
+        console.log('Attempting to sign in with:', email);
+        const userCredential = await signInWithEmailAndPassword(auth, email, password);
+        console.log('Sign in successful:', userCredential.user.uid);
     } catch (error) {
+        console.error('Login error:', error);
         alert('Login failed: ' + error.message);
     }
 });
@@ -1045,27 +1662,89 @@ function formatAdminUserAnswer(result) {
 
 // Add event listeners for filters
 document.addEventListener('DOMContentLoaded', function() {
+    console.log('=== DOM Content Loaded ===');
+    console.log('Setting up event listeners...');
+    
     // View filter
     const viewFilter = document.getElementById('viewFilter');
     if (viewFilter) {
-        viewFilter.addEventListener('change', () => {
-            updateDashboardUI(); // Only update UI, don't reload data
+        console.log('Setting up view filter listener');
+        viewFilter.addEventListener('change', function() {
+            console.log('View filter changed:', this.value);
+            updateSubmissionsUI();
+        });
+    }
+    
+    // Course filter
+    const courseFilter = document.getElementById('courseFilter');
+    if (courseFilter) {
+        console.log('Setting up course filter listener');
+        courseFilter.addEventListener('change', function() {
+            console.log('Course filter changed:', this.value);
+            updateSubmissionsUI();
         });
     }
     
     // Chapter filter
     const chapterFilter = document.getElementById('chapterFilter');
     if (chapterFilter) {
-        chapterFilter.addEventListener('change', () => {
-            updateDashboardUI(); // Only update UI, don't reload data
+        console.log('Setting up chapter filter listener');
+        chapterFilter.addEventListener('change', function() {
+            console.log('Chapter filter changed:', this.value);
+            updateSubmissionsUI();
         });
     }
     
     // Search input
     const searchInput = document.getElementById('searchEmail');
     if (searchInput) {
-        searchInput.addEventListener('input', () => {
-            updateDashboardUI(); // Only update UI, don't reload data
+        console.log('Setting up search input listener');
+        searchInput.addEventListener('input', function() {
+            console.log('Search input changed:', this.value);
+            updateSubmissionsUI();
         });
+    }
+
+    // Quiz form
+    const quizForm = document.getElementById('quizForm');
+    if (quizForm) {
+        console.log('Setting up quiz form listener');
+        quizForm.addEventListener('submit', handleQuizSave);
+    } else {
+        console.error('Quiz form not found');
+    }
+
+    // Course form
+    const courseForm = document.getElementById('courseForm');
+    if (courseForm) {
+        console.log('Setting up course form listener');
+        courseForm.addEventListener('submit', handleCourseSave);
+    } else {
+        console.error('Course form not found');
+    }
+
+    // Log all elements with IDs
+    console.log('=== All Elements with IDs ===');
+    document.querySelectorAll('[id]').forEach(el => {
+        console.log(`Element ID: ${el.id}, Tag: ${el.tagName}`);
+    });
+});
+
+// Make functions available globally
+window.loadCourses = function() {
+    loadCourses();
+};
+
+// Add event listeners for form submissions
+document.addEventListener('DOMContentLoaded', function() {
+    const quizForm = document.getElementById('quizForm');
+    const courseForm = document.getElementById('courseForm');
+
+    if (quizForm) {
+        quizForm.addEventListener('submit', handleQuizSave);
+    }
+
+    if (courseForm) {
+        courseForm.addEventListener('submit', handleCourseSave);
     }
 });

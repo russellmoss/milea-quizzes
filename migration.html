@@ -36,6 +36,9 @@
                     <button onclick="checkExistingData()" class="button button-secondary">
                         Check Existing Data
                     </button>
+                    <button onclick="migrateToCourseSystem()" class="button button-primary">
+                        Migrate to Course System
+                    </button>
                 </div>
             </div>
             
@@ -59,7 +62,11 @@
             collection, 
             addDoc, 
             getDocs, 
-            serverTimestamp 
+            serverTimestamp,
+            query,
+            where,
+            updateDoc,
+            doc
         } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
         import { firebaseConfig } from './config.js';
 
@@ -242,7 +249,29 @@
                 for (const [chapterNum, quiz] of Object.entries(quizData)) {
                     log(`Migrating Chapter ${chapterNum}: ${quiz.title}`);
                     
+                    // First create a course if it doesn't exist
+                    const courseRef = collection(db, 'courses');
+                    const courseQuery = query(courseRef, where('name', '==', 'Default Course'));
+                    const courseSnapshot = await getDocs(courseQuery);
+                    
+                    let courseId;
+                    if (courseSnapshot.empty) {
+                        const courseDoc = {
+                            name: 'Default Course',
+                            description: 'Default course created during migration',
+                            createdAt: serverTimestamp(),
+                            isActive: true
+                        };
+                        const newCourseRef = await addDoc(courseRef, courseDoc);
+                        courseId = newCourseRef.id;
+                        log(`✓ Created default course (ID: ${courseId})`);
+                    } else {
+                        courseId = courseSnapshot.docs[0].id;
+                        log(`✓ Using existing default course (ID: ${courseId})`);
+                    }
+                    
                     const quizDoc = {
+                        courseId: courseId,
                         chapterNumber: quiz.chapterNumber,
                         title: quiz.title,
                         questions: quiz.questions,
@@ -294,6 +323,89 @@
             } catch (error) {
                 showStatus(`Error checking existing data: ${error.message}`, 'error');
                 console.error('Check data error:', error);
+            }
+        };
+
+        window.migrateToCourseSystem = async function() {
+            const email = prompt('Enter admin email:');
+            const password = prompt('Enter admin password:');
+            
+            if (!email || !password) {
+                alert('Email and password are required for migration.');
+                return;
+            }
+
+            try {
+                showStatus('Starting course system migration...', 'info');
+                log('Course system migration started');
+                
+                // Sign in
+                await signInWithEmailAndPassword(auth, email, password);
+                log('✓ Admin authenticated successfully');
+                
+                // Step 1: Create default course
+                log('Creating default course...');
+                const defaultCourseData = {
+                    name: 'Milea Estate Training',
+                    description: 'Default training course for Milea Estate Vineyard staff',
+                    isActive: true,
+                    createdAt: serverTimestamp(),
+                    migratedFrom: 'migration-script'
+                };
+                
+                const defaultCourseRef = await addDoc(collection(db, 'courses'), defaultCourseData);
+                const defaultCourseId = defaultCourseRef.id;
+                log(`✓ Default course created (ID: ${defaultCourseId})`);
+                
+                // Step 2: Update existing quizzes
+                log('Updating existing quizzes...');
+                const quizzesRef = collection(db, 'quizzes');
+                const quizzesSnapshot = await getDocs(quizzesRef);
+                
+                let quizUpdateCount = 0;
+                for (const quizDoc of quizzesSnapshot.docs) {
+                    const quizData = quizDoc.data();
+                    
+                    // Only update if courseId is missing
+                    if (!quizData.courseId) {
+                        await updateDoc(doc(db, 'quizzes', quizDoc.id), {
+                            courseId: defaultCourseId,
+                            courseName: 'Milea Estate Training',
+                            updatedAt: serverTimestamp()
+                        });
+                        quizUpdateCount++;
+                    }
+                }
+                log(`✓ Updated ${quizUpdateCount} quizzes with course information`);
+                
+                // Step 3: Update existing submissions
+                log('Updating existing quiz submissions...');
+                const submissionsRef = collection(db, 'quiz_submissions');
+                const submissionsSnapshot = await getDocs(submissionsRef);
+                
+                let submissionUpdateCount = 0;
+                for (const submissionDoc of submissionsSnapshot.docs) {
+                    const submissionData = submissionDoc.data();
+                    
+                    // Only update if courseId is missing
+                    if (!submissionData.courseId) {
+                        await updateDoc(doc(db, 'quiz_submissions', submissionDoc.id), {
+                            courseId: defaultCourseId,
+                            courseName: 'Milea Estate Training',
+                            updatedAt: serverTimestamp()
+                        });
+                        submissionUpdateCount++;
+                    }
+                }
+                log(`✓ Updated ${submissionUpdateCount} submissions with course information`);
+                
+                log('Course system migration completed successfully!');
+                showStatus('Migration completed successfully! Your quiz system now supports multiple courses.', 'success');
+                
+            } catch (error) {
+                log(`✗ Migration failed: ${error.message}`);
+                showStatus(`Migration failed: ${error.message}`, 'error');
+                console.error('Migration error:', error);
             }
         };
     </script>

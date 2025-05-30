@@ -21,7 +21,8 @@ import {
     CACHE_SIZE_UNLIMITED,
     query,
     orderBy,
-    getDocs
+    getDocs,
+    where
 } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
 
 // Replace dynamic import with static import
@@ -31,6 +32,80 @@ import { firebaseConfig } from './config.js';
 let auth;
 let db;
 
+// Initialize Firebase when the page loads
+document.addEventListener('DOMContentLoaded', async function() {
+    console.log('DOM Content Loaded');
+    try {
+        await initializeFirebase();
+        
+        // Add click handler for header title
+        const headerTitle = document.getElementById('headerTitle');
+        if (headerTitle) {
+            headerTitle.addEventListener('click', async () => {
+                console.log('Header title clicked');
+                
+                // Clear quiz selection content
+                const quizSelection = document.getElementById('quizSelection');
+                if (quizSelection) {
+                    // Keep the title but clear the content
+                    const title = quizSelection.querySelector('h2');
+                    if (title) {
+                        title.textContent = 'Select a Course';
+                    }
+                    // Remove any existing quiz cards
+                    const existingCards = quizSelection.querySelectorAll('.quiz-card');
+                    existingCards.forEach(card => card.remove());
+                }
+                
+                // Hide quiz interface and results
+                document.getElementById('quizInterface').classList.add('hidden');
+                document.getElementById('quizResults').classList.add('hidden');
+                
+                // Show course selection
+                document.getElementById('courseSelection').classList.remove('hidden');
+                document.getElementById('quizSelection').classList.add('hidden');
+                
+                // Reset current course and quiz
+                currentCourse = null;
+                currentQuiz = null;
+                
+                // Reload courses
+                await loadCourses();
+            });
+        }
+    } catch (error) {
+        console.error('Error initializing Firebase:', error);
+        alert('Error connecting to the server. Please check your internet connection and try again.');
+    }
+});
+
+// Global variables
+let currentUser = null;
+let currentQuiz = null;
+let userAnswers = {};
+let availableQuizzes = {}; // Store loaded quizzes
+let currentCourse = null; // Store current course
+
+// Auth state observer with better error handling
+function setupAuthObserver() {
+    onAuthStateChanged(auth, async (user) => {
+        console.log('Auth state changed:', user ? 'User logged in' : 'No user');
+        currentUser = user;
+        
+        if (user) {
+            try {
+                await createOrUpdateUserProfile(user);
+                await loadCourses(); // Changed from loadCoursesFromFirestore to loadCourses
+            } catch (error) {
+                console.error('Error handling user profile:', error);
+            }
+        }
+        
+        updateUIForAuthState(user);
+    });
+}
+
+// Initialize Firebase
 async function initializeFirebase() {
     try {
         const app = initializeApp(firebaseConfig);
@@ -69,41 +144,15 @@ async function initializeFirebase() {
             serverTimestamp
         };
 
-        // Auth state observer with better error handling
-        onAuthStateChanged(auth, async (user) => {
-            console.log('Auth state changed:', user ? 'User logged in' : 'No user');
-            currentUser = user;
-            
-            if (user) {
-                try {
-                    await createOrUpdateUserProfile(user);
-                    await loadQuizzesFromFirestore();
-                } catch (error) {
-                    console.error('Error handling user profile:', error);
-                    // Don't throw here, just log the error
-                    // This allows the app to continue working even if profile creation fails
-                }
-            }
-            
-            updateUIForAuthState(user);
-        });
+        // Setup auth observer
+        setupAuthObserver();
 
         console.log('Firebase initialized successfully');
     } catch (error) {
         console.error('Error initializing Firebase:', error);
-        // Show user-friendly error message
-        alert('Error connecting to the server. Please check your internet connection and try again.');
+        throw error;
     }
 }
-
-// Initialize Firebase when the page loads
-initializeFirebase();
-
-// Global variables
-let currentUser = null;
-let currentQuiz = null;
-let userAnswers = {};
-let availableQuizzes = {}; // Store loaded quizzes
 
 // Handle login form submission
 document.getElementById('authFormLogin').addEventListener('submit', async (e) => {
@@ -147,40 +196,156 @@ window.toggleAuthMode = function() {
     }
 };
 
-// Load quizzes from Firestore
-async function loadQuizzesFromFirestore() {
+// Load courses from Firestore
+async function loadCourses() {
     try {
-        console.log('Loading quizzes from Firestore...');
-        const quizzesRef = collection(db, 'quizzes');
-        const q = query(quizzesRef, orderBy('chapterNumber'));
+        console.log('=== loadCourses called ===');
+        const coursesRef = collection(db, 'courses');
+        const q = query(coursesRef, where('isActive', '==', true));
         const querySnapshot = await getDocs(q);
         
-        console.log('Query snapshot size:', querySnapshot.size);
+        console.log('Query executed, received snapshot with', querySnapshot.size, 'documents');
         
-        availableQuizzes = {};
+        const courseSelectionDiv = document.getElementById('courseSelection');
+        if (!courseSelectionDiv) {
+            console.error('Course selection div not found');
+            return;
+        }
+        
+        // Clear existing courses
+        courseSelectionDiv.innerHTML = '';
+        
+        if (querySnapshot.size === 0) {
+            console.log('No active courses found');
+            courseSelectionDiv.innerHTML = `
+                <div class="col-span-full text-center py-8">
+                    <p class="text-gray-600">No courses available at the moment.</p>
+                    <p class="text-sm text-gray-500 mt-2">Please check back later or contact your administrator.</p>
+                </div>
+            `;
+            return;
+        }
+        
+        // Create course cards
         querySnapshot.forEach((doc) => {
-            const quiz = doc.data();
-            console.log('Processing quiz:', doc.id, quiz);
-            availableQuizzes[quiz.chapterNumber] = {
+            const course = {
                 id: doc.id,
-                ...quiz
+                ...doc.data()
             };
+            console.log('Processing course:', course);
+            
+            const courseCard = document.createElement('div');
+            courseCard.className = 'bg-white rounded-lg shadow-md p-6 border-l-4 border-primary';
+            courseCard.innerHTML = `
+                <h3 class="text-lg font-semibold mb-2">${course.name}</h3>
+                <p class="text-gray-600 mb-4">${course.description}</p>
+                <button onclick="selectCourse('${course.id}')" class="button button-primary w-full">Select Course</button>
+            `;
+            
+            courseSelectionDiv.appendChild(courseCard);
         });
-        
-        console.log('Available quizzes after loading:', availableQuizzes);
-        updateQuizSelectionUI();
     } catch (error) {
-        console.error('Error loading quizzes:', error);
+        console.error('Error loading courses:', error);
         console.error('Error details:', {
             code: error.code,
             message: error.message,
             stack: error.stack
         });
-        showQuizLoadError();
+        alert('Error loading courses. Please try refreshing the page.');
     }
 }
 
-function updateQuizSelectionUI() {
+// Function to select a course and show its quizzes
+window.selectCourse = async function(courseId) {
+    try {
+        console.log('=== selectCourse called ===');
+        console.log('Selected course ID:', courseId);
+        
+        // Get course details
+        const courseDoc = await getDoc(doc(db, 'courses', courseId));
+        if (!courseDoc.exists()) {
+            throw new Error('Course not found');
+        }
+        
+        const courseData = courseDoc.data();
+        console.log('Course details:', courseData);
+        
+        // Store current course information
+        currentCourse = {
+            id: courseId,
+            name: courseData.name,
+            description: courseData.description
+        };
+        
+        // Update UI to show course name
+        const quizSelection = document.getElementById('quizSelection');
+        if (quizSelection) {
+            const title = quizSelection.querySelector('h2');
+            if (title) {
+                title.textContent = `Quizzes for ${courseData.name}`;
+            }
+        }
+        
+        // Load quizzes for this course
+        await loadQuizzesFromFirestore(courseId);
+        
+        // Show quiz selection interface
+        document.getElementById('courseSelection').classList.add('hidden');
+        document.getElementById('quizSelection').classList.remove('hidden');
+        
+    } catch (error) {
+        console.error('Error selecting course:', error);
+        console.error('Error details:', error);
+        showQuizLoadError('Error loading quizzes. Please try again.');
+    }
+};
+
+// Function to load quizzes from Firestore
+async function loadQuizzesFromFirestore(courseId) {
+    try {
+        console.log('=== loadQuizzesFromFirestore called ===');
+        console.log('Course ID:', courseId);
+        
+        if (!courseId) {
+            throw new Error('No course ID provided');
+        }
+        
+        console.log('Loading quizzes from Firestore...');
+        
+        // Create a query for quizzes in this course
+        const quizzesQuery = query(
+            collection(db, 'quizzes'),
+            where('courseId', '==', courseId),
+            orderBy('chapterNumber')
+        );
+        
+        console.log('Executing query...');
+        const querySnapshot = await getDocs(quizzesQuery);
+        console.log('Query executed, received snapshot with', querySnapshot.size, 'documents');
+        
+        // Clear existing quizzes
+        availableQuizzes = {};
+        
+        // Process each quiz
+        querySnapshot.forEach((doc) => {
+            const quizData = doc.data();
+            availableQuizzes[quizData.chapterNumber] = {
+                id: doc.id,
+                ...quizData
+            };
+        });
+        
+        // Update the UI
+        updateQuizSelectionUI();
+        
+    } catch (error) {
+        console.error('Error loading quizzes:', error);
+        console.error('Error details:', error);
+        throw error; // Re-throw to be handled by selectCourse
+    }
+}
+
+function showQuizLoadError(message = 'Quiz not found. Please try refreshing the page.') {
     const quizSelectionDiv = document.getElementById('quizSelection');
     if (!quizSelectionDiv) {
         console.error('Quiz selection div not found');
@@ -193,56 +358,54 @@ function updateQuizSelectionUI() {
         return;
     }
     
-    console.log('Updating quiz selection UI with quizzes:', availableQuizzes);
-    
-    // Clear existing quiz cards
-    gridDiv.innerHTML = '';
-    
-    if (Object.keys(availableQuizzes).length === 0) {
-        console.log('No quizzes available');
-        gridDiv.innerHTML = `
-            <div class="col-span-full text-center py-8">
-                <p class="text-gray-600">No quizzes available at the moment.</p>
-                <p class="text-sm text-gray-500 mt-2">Please check back later or contact your administrator.</p>
-            </div>
-        `;
+    gridDiv.innerHTML = `
+        <div class="col-span-full text-center py-8">
+            <p class="text-gray-600">${message}</p>
+            <p class="text-sm text-gray-500 mt-2">Please check back later or contact your administrator.</p>
+        </div>
+    `;
+}
+
+// Function to update the quiz selection UI
+function updateQuizSelectionUI() {
+    const quizSelection = document.getElementById('quizSelection');
+    if (!quizSelection) {
+        console.error('Quiz selection container not found');
         return;
     }
     
-    // Sort by chapter number and create cards
-    Object.keys(availableQuizzes)
-        .sort((a, b) => parseInt(a) - parseInt(b))
-        .forEach(chapterNumber => {
-            const quiz = availableQuizzes[chapterNumber];
-            console.log('Creating card for quiz:', quiz);
-            
-            const quizCard = document.createElement('div');
-            quizCard.className = 'bg-white rounded-lg shadow-md p-6 border-l-4 border-primary';
-            quizCard.innerHTML = `
-                <h3 class="text-lg font-semibold mb-2">Chapter ${quiz.chapterNumber}</h3>
-                <p class="text-gray-600 mb-4">${quiz.title}</p>
-                <p class="text-sm text-gray-500 mb-4">${quiz.questions?.length || 0} questions</p>
-                <button onclick="window.startQuiz(${quiz.chapterNumber})" class="button button-primary w-full">Start Quiz</button>
-            `;
-            
-            gridDiv.appendChild(quizCard);
-        });
-}
-
-function showQuizLoadError() {
-    const quizSelectionDiv = document.getElementById('quizSelection');
-    if (!quizSelectionDiv) return;
+    // Clear existing quiz cards
+    const existingCards = quizSelection.querySelectorAll('.quiz-card');
+    existingCards.forEach(card => card.remove());
     
-    const gridDiv = quizSelectionDiv.querySelector('.grid');
-    if (!gridDiv) return;
+    // Create a container for quiz cards
+    const quizCardsContainer = document.createElement('div');
+    quizCardsContainer.className = 'grid gap-4 md:grid-cols-2 lg:grid-cols-3';
     
-    gridDiv.innerHTML = `
-        <div class="col-span-full text-center py-8">
-            <p class="text-red-600 mb-2">Error loading quizzes</p>
-            <p class="text-sm text-gray-500 mb-4">There was a problem loading the available quizzes.</p>
-            <button onclick="loadQuizzesFromFirestore()" class="button button-primary">Try Again</button>
-        </div>
-    `;
+    // Add quiz cards
+    Object.entries(availableQuizzes).forEach(([chapterNumber, quiz]) => {
+        const card = document.createElement('div');
+        card.className = 'bg-white rounded-lg shadow-md p-6 border-l-4 border-primary quiz-card';
+        card.innerHTML = `
+            <h3 class="text-lg font-semibold mb-2">Chapter ${chapterNumber}</h3>
+            <p class="text-gray-600 mb-4">${quiz.title || 'Untitled Quiz'}</p>
+            <button onclick="window.startQuiz(${chapterNumber})" class="button button-primary w-full">Start Quiz</button>
+        `;
+        quizCardsContainer.appendChild(card);
+    });
+    
+    // If no quizzes, show a message
+    if (Object.keys(availableQuizzes).length === 0) {
+        const noQuizzesCard = document.createElement('div');
+        noQuizzesCard.className = 'col-span-full text-center py-8';
+        noQuizzesCard.innerHTML = `
+            <p class="text-gray-600">No quizzes available for this course yet.</p>
+        `;
+        quizCardsContainer.appendChild(noQuizzesCard);
+    }
+    
+    // Add the quiz cards container to the quiz selection
+    quizSelection.appendChild(quizCardsContainer);
 }
 
 // Quiz functions
@@ -606,6 +769,8 @@ async function saveQuizResults(results) {
             userId: user.uid || '',
             userName: (userData?.name || user.email || ''),
             userEmail: user.email || '',
+            courseId: currentCourse.id,
+            courseName: currentCourse.name,
             chapterNumber: currentQuiz.chapterNumber || 0,
             chapterTitle: currentQuiz.title || '',
             score: results.score || 0,
@@ -770,6 +935,36 @@ function retakeQuiz() {
     }
 }
 
+// Function to go back to course selection
+window.goToCourseSelection = async function() {
+    try {
+        // Hide quiz interface and results
+        document.getElementById('quizInterface').classList.add('hidden');
+        document.getElementById('quizResults').classList.add('hidden');
+        
+        // Show course selection
+        document.getElementById('courseSelection').classList.remove('hidden');
+        document.getElementById('quizSelection').classList.add('hidden');
+        
+        // Reset current course and quiz
+        currentCourse = null;
+        currentQuiz = null;
+        
+        // Reload courses
+        await loadCourses();
+        
+        // Update header title
+        const headerTitle = document.querySelector('header h1');
+        if (headerTitle) {
+            headerTitle.textContent = 'Milea Estate Training';
+        }
+    } catch (error) {
+        console.error('Error returning to course selection:', error);
+        alert('Error loading courses. Please try refreshing the page.');
+    }
+};
+
+// Update the header HTML to make it clickable
 function updateUIForAuthState(user) {
     const authModal = document.getElementById('authModal');
     const mainApp = document.getElementById('mainApp');
@@ -785,6 +980,12 @@ function updateUIForAuthState(user) {
         // Update user name display
         if (userNameElement) {
             userNameElement.textContent = user.displayName || user.email;
+        }
+        
+        // Update header title to be clickable
+        const headerTitle = document.querySelector('header h1');
+        if (headerTitle) {
+            headerTitle.innerHTML = '<a href="#" onclick="window.goToCourseSelection(); return false;" class="hover:text-primary-dark transition-colors cursor-pointer">Milea Estate Training</a>';
         }
     } else {
         // User is signed out
@@ -813,10 +1014,6 @@ window.logout = function() {
 
 window.toggleAuthMode = function() {
     toggleAuthMode();
-};
-
-window.loadQuizzesFromFirestore = function() {
-    loadQuizzesFromFirestore();
 };
 
 // iframe height management

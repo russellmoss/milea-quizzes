@@ -1,11 +1,15 @@
 {
   "version": 2,
   "buildCommand": "npm run vercel-build",
-  "outputDirectory": ".",
+  "outputDirectory": "dist",
   "rewrites": [
     {
-      "source": "/config.js",
-      "destination": "/config.js"
+      "source": "/admin",
+      "destination": "/admin.html"
+    },
+    {
+      "source": "/quiz",
+      "destination": "/quiz-app.html"
     },
     {
       "source": "/(.*)",

@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin Dashboard - Milea Estate</title>
+    <link href="./dist/output.css" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        .modal {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.5);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+        }
+        .modal-content {
+            background-color: white;
+            padding: 2rem;
+            border-radius: 0.5rem;
+            width: 90%;
+            max-width: 800px;
+            max-height: 90vh;
+            overflow-y: auto;
+        }
+        .button {
+            padding: 0.5rem 1rem;
+            border-radius: 0.375rem;
+            font-weight: 500;
+            cursor: pointer;
+        }
+        .button-primary {
+            background-color: #2563eb;
+            color: white;
+        }
+        .button-primary:hover {
+            background-color: #1d4ed8;
+        }
+        .button-secondary {
+            background-color: #e5e7eb;
+            color: #374151;
+        }
+        .button-secondary:hover {
+            background-color: #d1d5db;
+        }
+    </style>
+</head>
+<body class="min-h-screen bg-background">
+    <div class="max-w-7xl mx-auto px-4 py-8">
+        <!-- Auth Modal -->
+        <div id="authModal" class="fixed inset-0 bg-gray-600 bg-opacity-50 flex items-center justify-center">
+            <div class="bg-white rounded-lg p-8 max-w-md w-full">
+                <h2 class="text-2xl font-bold mb-6">Admin Login</h2>
+                <form id="authForm" class="space-y-4">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700">Email</label>
+                        <input type="email" id="email" required
+                               class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary focus:ring-primary">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700">Password</label>
+                        <input type="password" id="password" required
+                               class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary focus:ring-primary">
+                    </div>
+                    <button type="submit" class="button button-primary w-full">Login</button>
+                </form>
+            </div>
+        </div>
+
+        <!-- Main App -->
+        <div id="mainApp" class="hidden">
+            <!-- Header -->
+            <div class="flex justify-between items-center mb-8">
+                <h1 class="text-3xl font-bold">Admin Dashboard</h1>
+                <button onclick="logout()" class="button button-secondary">Logout</button>
+            </div>
+
+            <!-- Tabs -->
+            <div class="flex space-x-4 mb-6">
+                <button onclick="switchTab('submissions')" class="px-4 py-2 rounded-md bg-blue-600 text-white hover:bg-blue-700">Submissions</button>
+                <button onclick="switchTab('quizzes')" class="px-4 py-2 rounded-md bg-gray-200 text-gray-700 hover:bg-gray-300">Quizzes</button>
+                <button onclick="switchTab('courses')" class="px-4 py-2 rounded-md bg-gray-200 text-gray-700 hover:bg-gray-300">Courses</button>
+            </div>
+
+            <!-- Submissions Section -->
+            <div id="submissionsSection" class="space-y-6">
+                <div class="flex justify-between items-center mb-6">
+                    <h2 class="text-2xl font-bold">Submissions</h2>
+                    <div class="flex space-x-4">
+                        <div>
+                            <label for="viewFilter" class="block text-sm font-medium text-gray-700 mb-1">View</label>
+                            <select id="viewFilter" class="rounded-md border-gray-300 shadow-sm focus:border-primary focus:ring-primary">
+                                <option value="pending">Pending Review</option>
+                                <option value="graded">Graded</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label for="courseFilter" class="block text-sm font-medium text-gray-700 mb-1">Course</label>
+                            <select id="courseFilter" class="rounded-md border-gray-300 shadow-sm focus:border-primary focus:ring-primary">
+                                <option value="">All Courses</option>
+                                <!-- Course options will be loaded here -->
+                            </select>
+                        </div>
+                        <div>
+                            <label for="chapterFilter" class="block text-sm font-medium text-gray-700 mb-1">Chapter</label>
+                            <select id="chapterFilter" class="rounded-md border-gray-300 shadow-sm focus:border-primary focus:ring-primary">
+                                <option value="">All Chapters</option>
+                                <!-- Chapter options will be loaded here -->
+                            </select>
+                        </div>
+                        <div>
+                            <label for="searchEmail" class="block text-sm font-medium text-gray-700 mb-1">Search Email</label>
+                            <input type="text" id="searchEmail" placeholder="Search by email"
+                                   class="rounded-md border-gray-300 shadow-sm focus:border-primary focus:ring-primary">
+                        </div>
+                    </div>
+                </div>
+                
+                <div id="submissionsList" class="space-y-4">
+                    <!-- Submissions will be loaded here -->
+                </div>
+            </div>
+
+            <!-- Quizzes Section -->
+            <div id="quizzesSection" class="space-y-6" style="display: none;">
+                <div class="flex justify-between items-center">
+                    <h2 class="text-2xl font-bold">Quiz Management</h2>
+                    <button onclick="createNewQuiz()" class="button button-primary">Create New Quiz</button>
+                </div>
+                
+                <div id="quizzesList" class="space-y-4">
+                    <!-- Quizzes will be loaded here -->
+                </div>
+            </div>
+
+            <!-- Courses Section -->
+            <div id="coursesSection" class="space-y-6" style="display: none;">
+                <div class="flex justify-between items-center">
+                    <h2 class="text-2xl font-bold">Course Management</h2>
+                    <button onclick="createNewCourse()" class="button button-primary">Create New Course</button>
+                </div>
+                
+                <div id="coursesList" class="space-y-4">
+                    <!-- Courses will be loaded here -->
+                </div>
+            </div>
+        </div>
+
+        <!-- Course Builder Modal -->
+        <div id="courseBuilderModal" class="fixed inset-0 bg-black bg-opacity-50 z-50 hidden">
+            <div class="fixed inset-0 flex items-center justify-center p-4">
+                <div class="bg-white rounded-lg shadow-xl w-full max-w-2xl">
+                    <!-- Header -->
+                    <div class="p-6 border-b">
+                        <div class="flex justify-between items-center">
+                            <h3 id="courseBuilderTitle" class="text-xl font-bold text-gray-900">Create New Course</h3>
+                            <button onclick="closeCourseBuilder()" class="text-gray-500 hover:text-gray-700">
+                                <svg class="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                                </svg>
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <!-- Content -->
+                    <div class="p-6">
+                        <form id="courseForm" class="space-y-4">
+                            <div>
+                                <label for="courseName" class="block text-sm font-medium text-gray-700">Course Title</label>
+                                <input type="text" id="courseName" name="courseName" required
+                                    class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary focus:ring-primary">
+                            </div>
+                            <div>
+                                <label for="courseDescription" class="block text-sm font-medium text-gray-700">Description</label>
+                                <textarea id="courseDescription" name="courseDescription" rows="3"
+                                    class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary focus:ring-primary"></textarea>
+                            </div>
+                            <div class="flex justify-end space-x-2">
+                                <button type="button" onclick="closeCourseBuilder()" class="button button-secondary">Cancel</button>
+                                <button type="submit" class="button button-primary">Save Course</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Quiz Builder Modal -->
+        <div id="quizBuilderModal" class="fixed inset-0 bg-black bg-opacity-50 z-50 hidden">
+            <div class="fixed inset-0 flex items-center justify-center p-4">
+                <div class="bg-white rounded-lg shadow-xl w-full max-w-6xl" style="height: 90vh;">
+                    <!-- Header -->
+                    <div class="p-6 border-b">
+                        <div class="flex justify-between items-center">
+                            <h3 id="quizBuilderTitle" class="text-xl font-bold text-gray-900">Create New Quiz</h3>
+                            <button onclick="closeQuizBuilder()" class="text-gray-500 hover:text-gray-700">
+                                <svg class="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                                </svg>
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <!-- Content -->
+                    <div id="quizBuilderContent" class="p-6" style="height: calc(90vh - 80px); overflow-y: auto;">
+                        <form id="quizForm" class="space-y-4">
+                            <div>
+                                <label for="quizTitle" class="block text-sm font-medium text-gray-700">Quiz Title</label>
+                                <input type="text" id="quizTitle" name="title" required
+                                    class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary focus:ring-primary">
+                            </div>
+                            <div>
+                                <label for="courseId" class="block text-sm font-medium text-gray-700">Course</label>
+                                <select id="courseId" name="courseId" required
+                                    class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary focus:ring-primary">
+                                    <option value="">Select a course</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label for="chapterNumber" class="block text-sm font-medium text-gray-700">Chapter Number</label>
+                                <input type="number" id="chapterNumber" name="chapterNumber" min="1" required
+                                    class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary focus:ring-primary">
+                            </div>
+                            <div>
+                                <label for="quizDescription" class="block text-sm font-medium text-gray-700">Description</label>
+                                <textarea id="quizDescription" name="description" rows="3"
+                                    class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary focus:ring-primary"></textarea>
+                            </div>
+                            <div id="questionsContainer" class="space-y-4">
+                                <!-- Questions will be added here -->
+                            </div>
+                            <div class="flex justify-between items-center">
+                                <button type="button" onclick="showQuestionTypeModal()" class="button button-secondary">
+                                    Add Question
+                                </button>
+                                <div class="flex space-x-2">
+                                    <button type="button" onclick="closeQuizBuilder()" class="button button-secondary">Cancel</button>
+                                    <button type="submit" class="button button-primary">Save Quiz</button>
+                                </div>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Question Type Select Modal -->
+        <div id="questionTypeModal" class="fixed inset-0 bg-black bg-opacity-50 z-50 hidden">
+            <div class="fixed inset-0 flex items-center justify-center p-4">
+                <div class="bg-white rounded-lg shadow-xl w-full max-w-4xl">
+                    <!-- Header -->
+                    <div class="p-6 border-b">
+                        <div class="flex justify-between items-center">
+                            <h3 class="text-xl font-bold text-gray-900">Select Question Type</h3>
+                            <button onclick="closeQuestionTypeModal()" class="text-gray-500 hover:text-gray-700">
+                                <svg class="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                                </svg>
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <!-- Content -->
+                    <div class="p-6">
+                        <div class="grid grid-cols-2 gap-4">
+                            <button onclick="selectQuestionType('multiple-choice')" class="p-4 border rounded-lg hover:bg-gray-50">
+                                <h3 class="font-semibold">Multiple Choice</h3>
+                                <p class="text-sm text-gray-600">Single correct answer from multiple options</p>
+                            </button>
+                            <button onclick="selectQuestionType('fill-blank')" class="p-4 border rounded-lg hover:bg-gray-50">
+                                <h3 class="font-semibold">Fill in the Blank</h3>
+                                <p class="text-sm text-gray-600">Single word or phrase answer</p>
+                            </button>
+                            <button onclick="selectQuestionType('fill-blank-double')" class="p-4 border rounded-lg hover:bg-gray-50">
+                                <h3 class="font-semibold">Double Fill in the Blank</h3>
+                                <p class="text-sm text-gray-600">Two related answers</p>
+                            </button>
+                            <button onclick="selectQuestionType('true-false')" class="p-4 border rounded-lg hover:bg-gray-50">
+                                <h3 class="font-semibold">True/False</h3>
+                                <p class="text-sm text-gray-600">Binary choice question</p>
+                            </button>
+                            <button onclick="selectQuestionType('short-answer')" class="p-4 border rounded-lg hover:bg-gray-50">
+                                <h3 class="font-semibold">Short Answer</h3>
+                                <p class="text-sm text-gray-600">Brief written response</p>
+                            </button>
+                            <button onclick="selectQuestionType('long-answer')" class="p-4 border rounded-lg hover:bg-gray-50">
+                                <h3 class="font-semibold">Long Answer</h3>
+                                <p class="text-sm text-gray-600">Detailed written response</p>
+                            </button>
+                            <button onclick="selectQuestionType('profile-strategy')" class="p-4 border rounded-lg hover:bg-gray-50">
+                                <h3 class="font-semibold">Profile & Strategy</h3>
+                                <p class="text-sm text-gray-600">Match profiles with strategies</p>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script type="module" src="admin-dashboard.js"></script>
+</body>
+</html> 
