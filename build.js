@@ -82,9 +82,14 @@ try {
     }
     console.log('Found input.css at:', inputCssPath);
     
-    // Build Tailwind CSS
+    // Build Tailwind CSS with PostCSS
     console.log('\nBuilding Tailwind CSS...');
     const outputCssPath = './dist/output.css';
+    
+    // First run PostCSS
+    execSync('npx postcss ./src/input.css -o ./dist/output.css --minify', { stdio: 'inherit' });
+    
+    // Then run Tailwind
     execSync(`npx tailwindcss -i ${inputCssPath} -o ${outputCssPath} --minify`, { stdio: 'inherit' });
     
     // Verify the output file exists and has content
@@ -102,6 +107,12 @@ try {
         const cssContent = fs.readFileSync(outputCssPath, 'utf8');
         console.log('\nFirst 200 characters of generated CSS:');
         console.log(cssContent.substring(0, 200));
+        
+        // Verify CSS content
+        if (cssContent.includes('@tailwind')) {
+            console.error('Error: Raw Tailwind directives found in output CSS');
+            process.exit(1);
+        }
     } else {
         console.error('Error: output.css was not created');
         process.exit(1);

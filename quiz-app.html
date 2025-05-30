@@ -4,15 +4,35 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Milea Quiz App</title>
-    <!-- Fallback to CDN if local CSS fails -->
-    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
-    <link href="output.css" rel="stylesheet" onload="console.log('Local CSS loaded successfully')" onerror="console.error('Failed to load local CSS:', this.href)">
+    <!-- Load Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Load our custom CSS -->
+    <link href="/output.css" rel="stylesheet">
     <script>
         console.log('Document head loaded');
+        // Configure Tailwind
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        primary: '#2563eb',
+                        'primary-dark': '#1d4ed8',
+                        background: '#F5F5DC'
+                    },
+                    fontFamily: {
+                        'gilda': ['Gilda Display', 'serif']
+                    }
+                }
+            }
+        }
+        // Log CSS loading
         window.addEventListener('load', () => {
             console.log('Window loaded, checking CSS...');
             const styles = document.styleSheets;
             console.log('Available stylesheets:', Array.from(styles).map(sheet => sheet.href));
+            // Check if our CSS is loaded
+            const ourCss = Array.from(styles).find(sheet => sheet.href && sheet.href.includes('output.css'));
+            console.log('Our CSS loaded:', !!ourCss);
         });
     </script>
 </head>
