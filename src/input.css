@@ -10,15 +10,19 @@
 
 @layer components {
     .button {
-        @apply px-4 py-2 rounded-md font-medium transition-colors duration-200;
+        @apply px-4 py-2 rounded-md font-medium transition-colors;
     }
     
     .button-primary {
-        @apply bg-blue-600 text-white hover:bg-blue-700;
+        @apply bg-primary text-white hover:bg-primary-dark;
     }
     
     .button-secondary {
-        @apply bg-gray-200 text-gray-800 hover:bg-gray-300;
+        @apply bg-gray-200 text-gray-700 hover:bg-gray-300;
+    }
+    
+    .button-danger {
+        @apply bg-red-600 text-white hover:bg-red-700;
     }
     
     .card {

@@ -4,27 +4,9 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Milea Quiz App</title>
-    <!-- Load Tailwind CSS -->
-    <script src="https://cdn.tailwindcss.com"></script>
-    <!-- Load our custom CSS -->
-    <link href="/output.css" rel="stylesheet">
+    <link href="output.css" rel="stylesheet">
     <script>
         console.log('Document head loaded');
-        // Configure Tailwind
-        tailwind.config = {
-            theme: {
-                extend: {
-                    colors: {
-                        primary: '#2563eb',
-                        'primary-dark': '#1d4ed8',
-                        background: '#F5F5DC'
-                    },
-                    fontFamily: {
-                        'gilda': ['Gilda Display', 'serif']
-                    }
-                }
-            }
-        }
         // Log CSS loading
         window.addEventListener('load', () => {
             console.log('Window loaded, checking CSS...');

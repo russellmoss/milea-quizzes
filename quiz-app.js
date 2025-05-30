@@ -36,7 +36,141 @@ let db;
 document.addEventListener('DOMContentLoaded', async function() {
     console.log('DOM Content Loaded');
     try {
-        await initializeFirebase();
+        // Check if Firebase config is available
+        if (!firebaseConfig) {
+            throw new Error('Firebase configuration is missing');
+        }
+        console.log('Firebase config available:', firebaseConfig.projectId);
+
+        // Initialize Firebase immediately
+        const app = initializeApp(firebaseConfig);
+        console.log('Firebase app initialized');
+        
+        auth = getAuth(app);
+        console.log('Firebase auth initialized');
+        
+        // Initialize Firestore with settings
+        db = initializeFirestore(app, {
+            cacheSizeBytes: CACHE_SIZE_UNLIMITED,
+            ignoreUndefinedProperties: true
+        });
+        console.log('Firestore initialized');
+
+        // Make Firebase available globally
+        window.auth = auth;
+        window.db = db;
+        window.firebase = {
+            signInWithEmailAndPassword,
+            createUserWithEmailAndPassword,
+            signOut,
+            doc,
+            getDoc,
+            setDoc,
+            collection,
+            addDoc,
+            serverTimestamp
+        };
+
+        // Setup auth observer immediately
+        setupAuthObserver();
+
+        // Add form event listeners
+        const loginForm = document.getElementById('authFormLogin');
+        const signupForm = document.getElementById('authFormSignup');
+        
+        if (loginForm) {
+            console.log('Adding login form listener');
+            loginForm.addEventListener('submit', async (e) => {
+                e.preventDefault();
+                console.log('Login form submitted');
+                const email = document.getElementById('loginEmail').value;
+                const password = document.getElementById('loginPassword').value;
+                
+                if (!email || !password) {
+                    alert('Please enter both email and password');
+                    return;
+                }
+                
+                try {
+                    console.log('Attempting login with email:', email);
+                    // Show loading state
+                    const submitButton = loginForm.querySelector('button[type="submit"]');
+                    if (submitButton) {
+                        submitButton.disabled = true;
+                        submitButton.textContent = 'Logging in...';
+                    }
+                    
+                    const userCredential = await signInWithEmailAndPassword(auth, email, password);
+                    console.log('Login successful:', userCredential.user);
+                    
+                    // Immediately update UI
+                    updateUIForAuthState(userCredential.user);
+                    
+                    // Load courses after successful login
+                    await loadCourses();
+                } catch (error) {
+                    console.error('Login error:', error);
+                    let errorMessage = 'Login failed: ';
+                    
+                    switch (error.code) {
+                        case 'auth/invalid-email':
+                            errorMessage += 'Invalid email address';
+                            break;
+                        case 'auth/user-disabled':
+                            errorMessage += 'This account has been disabled';
+                            break;
+                        case 'auth/user-not-found':
+                            errorMessage += 'No account found with this email';
+                            break;
+                        case 'auth/wrong-password':
+                            errorMessage += 'Incorrect password';
+                            break;
+                        case 'auth/too-many-requests':
+                            errorMessage += 'Too many failed attempts. Please try again later';
+                            break;
+                        case 'auth/network-request-failed':
+                            errorMessage += 'Network error. Please check your internet connection';
+                            break;
+                        default:
+                            errorMessage += error.message;
+                    }
+                    
+                    alert(errorMessage);
+                } finally {
+                    // Reset button state
+                    const submitButton = loginForm.querySelector('button[type="submit"]');
+                    if (submitButton) {
+                        submitButton.disabled = false;
+                        submitButton.textContent = 'Login';
+                    }
+                }
+            });
+        } else {
+            console.error('Login form not found');
+        }
+        
+        if (signupForm) {
+            console.log('Adding signup form listener');
+            signupForm.addEventListener('submit', async (e) => {
+                e.preventDefault();
+                console.log('Signup form submitted');
+                const name = document.getElementById('signupName').value;
+                const email = document.getElementById('signupEmail').value;
+                const password = document.getElementById('signupPassword').value;
+                
+                try {
+                    console.log('Attempting signup with email:', email);
+                    const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+                    await createOrUpdateUserProfile(userCredential.user, { name });
+                    console.log('Signup successful');
+                } catch (error) {
+                    console.error('Signup error:', error);
+                    alert('Signup failed: ' + error.message);
+                }
+            });
+        } else {
+            console.error('Signup form not found');
+        }
         
         // Add click handler for header title
         const headerTitle = document.getElementById('headerTitle');
@@ -88,20 +222,35 @@ let currentCourse = null; // Store current course
 
 // Auth state observer with better error handling
 function setupAuthObserver() {
+    console.log('Setting up auth observer');
+    if (!auth) {
+        console.error('Auth not initialized');
+        return;
+    }
+    
     onAuthStateChanged(auth, async (user) => {
         console.log('Auth state changed:', user ? 'User logged in' : 'No user');
         currentUser = user;
         
         if (user) {
             try {
+                console.log('User authenticated:', user.email);
+                // Update UI immediately
+                updateUIForAuthState(user);
+                
+                // Then load user data and courses
                 await createOrUpdateUserProfile(user);
-                await loadCourses(); // Changed from loadCoursesFromFirestore to loadCourses
+                await loadCourses();
             } catch (error) {
                 console.error('Error handling user profile:', error);
             }
+        } else {
+            console.log('No user authenticated');
+            // Update UI immediately for logged out state
+            updateUIForAuthState(null);
         }
-        
-        updateUIForAuthState(user);
+    }, (error) => {
+        console.error('Auth state observer error:', error);
     });
 }
 
@@ -153,34 +302,6 @@ async function initializeFirebase() {
         throw error;
     }
 }
-
-// Handle login form submission
-document.getElementById('authFormLogin').addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const email = document.getElementById('loginEmail').value;
-    const password = document.getElementById('loginPassword').value;
-    
-    try {
-        await signInWithEmailAndPassword(auth, email, password);
-    } catch (error) {
-        alert('Login failed: ' + error.message);
-    }
-});
-
-// Handle signup form submission
-document.getElementById('authFormSignup').addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const name = document.getElementById('signupName').value;
-    const email = document.getElementById('signupEmail').value;
-    const password = document.getElementById('signupPassword').value;
-    
-    try {
-        const userCredential = await createUserWithEmailAndPassword(auth, email, password);
-        await createOrUpdateUserProfile(userCredential.user, { name });
-    } catch (error) {
-        alert('Signup failed: ' + error.message);
-    }
-});
 
 // Toggle between login and signup forms
 window.toggleAuthMode = function() {
@@ -966,6 +1087,7 @@ window.goToCourseSelection = async function() {
 
 // Update the header HTML to make it clickable
 function updateUIForAuthState(user) {
+    console.log('Updating UI for auth state:', user ? 'logged in' : 'logged out');
     const authModal = document.getElementById('authModal');
     const mainApp = document.getElementById('mainApp');
     const quizSelection = document.getElementById('quizSelection');
