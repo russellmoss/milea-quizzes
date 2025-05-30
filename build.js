@@ -87,9 +87,11 @@ try {
     const outputCssPath = './dist/output.css';
     
     // First run PostCSS
+    console.log('Running PostCSS...');
     execSync('npx postcss ./src/input.css -o ./dist/output.css --minify', { stdio: 'inherit' });
     
     // Then run Tailwind
+    console.log('Running Tailwind...');
     execSync(`npx tailwindcss -i ${inputCssPath} -o ${outputCssPath} --minify`, { stdio: 'inherit' });
     
     // Verify the output file exists and has content

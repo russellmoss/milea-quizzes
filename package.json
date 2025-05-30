@@ -4,8 +4,8 @@
   "description": "Quiz application for Milea Estate Training",
   "main": "index.js",
   "scripts": {
-    "build": "node build.js",
-    "vercel-build": "node build.js",
+    "build": "npm install && node build.js",
+    "vercel-build": "npm install && node build.js",
     "dev": "npx tailwindcss -i ./src/input.css -o ./output.css --watch"
   },
   "dependencies": {
